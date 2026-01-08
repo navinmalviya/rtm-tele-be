@@ -109,10 +109,103 @@ const bulkUpdateStations = async (req, res) => {
 	}
 };
 
+// controllers/station-controller.js
+
+const getStationInternalTopology = async (req, res) => {
+	try {
+		const { id } = req.params; // Station ID
+
+		const topology = await prisma.station.findUnique({
+			where: { id },
+			include: {
+				locations: {
+					include: {
+						racks: {
+							include: {
+								equipments: {
+									include: {
+										ports: {
+											include: {
+												// Fetch links where this port is the source
+												linksAsSource: true,
+												// Fetch links where this port is the target
+												linksAsTarget: true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				// Also fetch equipments that might not be in a rack (Loose equipment)
+				equipments: {
+					where: { rackId: null },
+					include: { ports: true },
+				},
+			},
+		});
+
+		if (!topology) return res.status(404).json({ error: "Station not found" });
+
+		res.status(200).json(topology);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+const getStationSummary = async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		const summary = await prisma.station.findUnique({
+			where: { id },
+			select: {
+				name: true,
+				code: true,
+				section: true,
+				_count: {
+					select: {
+						locations: true,
+						equipments: true, // Total devices in the station
+					},
+				},
+			},
+		});
+
+		if (!summary) return res.status(404).json({ error: "Station not found" });
+
+		// Since Racks are nested inside Locations, we fetch the rack count separately
+		// to get a clean total for the station.
+		const rackCount = await prisma.rack.count({
+			where: {
+				location: {
+					stationId: id,
+				},
+			},
+		});
+
+		const data = {
+			name: summary.name,
+			code: summary.code,
+			section: summary.section,
+			totalLocations: summary._count.locations,
+			totalRacks: rackCount,
+			totalDevices: summary._count.equipments,
+		};
+
+		res.status(200).json(data);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
 export {
 	createStation,
 	findAllStations,
 	updateStation,
 	deleteStation,
 	bulkUpdateStations,
+	getStationInternalTopology,
+	getStationSummary,
 };

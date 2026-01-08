@@ -14,14 +14,67 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enums 
+// -----------------------------------------------------------------------------
+// ENUMS
+// -----------------------------------------------------------------------------
+
 enum UserRole {
   ADMIN
   EDITOR
   VIEWER
 }
 
-// Models
+enum EquipmentCategory {
+  NETWORKING      
+  POWER           
+  TRANSMISSION    
+  COMPUTING       
+  SENSORS         
+  PASSIVE         
+}
+
+enum AssetStatus {
+  OPERATIONAL
+  FAULTY
+  MAINTENANCE
+  SPARE
+  DECOMMISSIONED
+}
+
+enum RackType {
+  FLOOR_STANDING
+  WALL_MOUNTED
+  OUTDOOR_CABINET
+  BATTERY_STAND
+}
+
+enum PortType {
+  RJ45
+  SFP
+  FIBER_LC
+  FIBER_SC
+  E1
+  SERIAL
+  DC_TERMINAL
+  AC_PLUG
+}
+
+enum PortStatus {
+  UP
+  DOWN
+  RESERVED
+  FAULTY
+}
+
+enum LinkStatus {
+  ACTIVE
+  INACTIVE
+  PLANNED
+}
+
+// -----------------------------------------------------------------------------
+// MODELS
+// -----------------------------------------------------------------------------
 
 model User {
   id           String   @id @default(uuid())
@@ -31,25 +84,29 @@ model User {
   username     String   @unique
   role         UserRole @default(VIEWER)
   designation  String
+  
   // Relations
   stations     Station[] @relation("UserStations")
+  equipments   Equipment[] @relation("UserEquipments")
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
 
-
 model Station {
   id            String       @id @default(uuid())
-
-  code          String       @unique   // MRN, RTM, UJN
+  code          String       @unique   
   name          String
   section       String
   subSection    String
 
-  // React Flow canvas position
+  // XYFlow canvas position (Geographic/Section view)
   mapX          Float
   mapY          Float
+
+  // Relations
+  locations     Location[]
+  equipments    Equipment[]
 
   // Audit
   createdById   String
@@ -57,6 +114,134 @@ model Station {
 
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+}
+
+model Location {
+  id          String   @id @default(uuid())
+  name        String   
+  description String?
+  
+  stationId   String
+  station     Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  
+  racks       Rack[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([stationId])
+}
+
+model Rack {
+  id          String    @id @default(uuid())
+  name        String    
+  type        RackType  @default(WALL_MOUNTED)
+  heightU     Int?      @default(42)
+  
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  equipments  Equipment[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([locationId])
+}
+
+model Equipment {
+  id               String            @id @default(uuid())
+  name             String            
+  serialNumber     String?           @unique
+  partNumber       String?           
+  
+  // Classification
+  category         EquipmentCategory
+  subType          String            
+  isCoreEquipment  Boolean           @default(false) 
+
+  // XYFlow canvas position (Station Internal view)
+  mapX             Float             @default(0)
+  mapY             Float             @default(0)
+
+  // Technical Specs
+  capacityValue    Float?            
+  capacityUnit     String?           
+  ipAddress        String?           @unique
+
+  // Physical Placement
+  uPosition        Int?              
+  uHeight          Int?              @default(1)
+
+  // Lifecycle
+  status           AssetStatus       @default(OPERATIONAL)
+  installationDate DateTime?
+  codalLifeYears   Int?              
+  isAmc            Boolean           @default(false)
+  amcExpiry        DateTime?         
+
+  // Relations
+  stationId        String
+  station          Station           @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  
+  rackId           String?
+  rack             Rack?             @relation(fields: [rackId], references: [id], onDelete: SetNull)
+  
+  ports            Port[]
+
+  // Audit
+  createdById      String
+  createdBy        User              @relation("UserEquipments", fields: [createdById], references: [id])
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([stationId])
+  @@index([rackId])
+}
+
+model Port {
+  id               String            @id @default(uuid())
+  name             String            // e.g., "Gi0/1"
+  type             PortType          @default(RJ45)
+  status           PortStatus        @default(DOWN)
+  speed            String?           
+  
+  // Logical Networking (Simple Version)
+  ipAddress        String?           @unique 
+  vlanMode         String            @default("ACCESS") // "ACCESS" or "TRUNK"
+  vlanIds          String?           // e.g., "10" or "10, 20, 30"
+
+  equipmentId      String
+  equipment        Equipment         @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  linksAsSource    PortLink[]        @relation("PortLinkSource")
+  linksAsTarget    PortLink[]        @relation("PortLinkTarget")
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([equipmentId])
+}
+
+model PortLink {
+  id               String    @id @default(uuid())
+  label            String?   
+  cableType        String?   
+  length           Float?    
+  
+  sourcePortId     String
+  source           Port      @relation("PortLinkSource", fields: [sourcePortId], references: [id], onDelete: Cascade)
+  
+  targetPortId     String
+  target           Port      @relation("PortLinkTarget", fields: [targetPortId], references: [id], onDelete: Cascade)
+
+  status           LinkStatus @default(ACTIVE)
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([sourcePortId, targetPortId])
 }
 
 
