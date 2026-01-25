@@ -1,70 +1,65 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import prisma from "../lib/prisma";
+import prisma from "../lib/prisma.js";
 
-// Create and Save a new user
 const create = async (req, res) => {
-	if (
-		!req.body.email &&
-		!req.body.name &&
-		!req.body.designation &&
-		!req.body.password
-	) {
-		res.status(400).send({ message: "Content can not be empty!" });
-	}
+	const { email, name, designation, password, role, username, divisionId } =
+		req.body;
 
-	const { email, name, designation, password, role, username } = req.body;
+	// Basic validation
+	if (!email || !name || !password || !username || !divisionId) {
+		return res.status(400).send({
+			message:
+				"Required fields are missing! (Email, Name, Password, Username, DivisionId)",
+		});
+	}
 
 	try {
 		const user = await prisma.user.create({
 			data: {
-				name: name,
-				email: email,
-				username: username,
+				name,
+				email,
+				username,
 				password: bcrypt.hashSync(password, 8),
-				designation: designation,
-				role: role,
+				designation,
+				role,
+				divisionId, // Now linking user to their Railway Division
 			},
 		});
 
-		res.status(201).json({
+		return res.status(201).json({
 			message: "User registered successfully!!",
-			user,
-		});
-		res.status(201).json({
-			message: "User registered successfully!!",
-			user,
+			user: {
+				id: user.id,
+				username: user.username,
+				divisionId: user.divisionId,
+			},
 		});
 	} catch (error) {
-		res.status(500).json(error.message);
+		return res.status(500).json({ message: error.message });
 	}
 };
 
 const signin = async (req, res) => {
-	const { username, password } = req.body;
-
-	if (!username || !password) {
-		return res
-			.status(400)
-			.json({ message: "Username and password are required!" });
-	}
+	// ... (keep your validation and findUnique logic)
 
 	try {
 		const user = await prisma.user.findUnique({
 			where: { username: username },
+			include: {
+				division: true, // This fetches the full Division object
+			},
 		});
 
-		if (!user) {
-			return res.status(404).json({ message: "User not found." });
-		}
-
-		const passwordIsValid = bcrypt.compareSync(password, user.password);
-		if (!passwordIsValid) {
-			return res.status(401).json({ message: "Invalid Password!" });
-		}
+		// ... (keep your password validation logic)
 
 		const token = jwt.sign(
-			{ id: user.id, role: user.role, username: user.username },
+			{
+				id: user.id,
+				role: user.role,
+				username: user.username,
+				divisionId: user.divisionId, // This is the UUID string from the User table
+			},
 			process.env.API_SECRET,
 			{ expiresIn: "24h" },
 		);
@@ -75,6 +70,11 @@ const signin = async (req, res) => {
 				username: user.username,
 				fullName: user.name,
 				role: user.role,
+				// Accessing the ID directly from the user record
+				divisionId: user.divisionId,
+				// Accessing the code from the nested 'division' object fetched via 'include'
+				divisionCode: user.division?.code || "N/A",
+				divisionName: user.division?.name || "N/A",
 			},
 			message: "Login successful",
 			accessToken: token,
