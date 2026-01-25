@@ -6,13 +6,14 @@ import {
 	getStationInternalTopology,
 	getStationSummary,
 } from "../controllers/station-controller.js";
+import { verifyToken } from "../middlewares/verifiyToken.js";
 
 const router = Router();
 
-router.post("/create", createStation);
-router.get("/all", findAllStations);
-router.post("/bulk-update", bulkUpdateStations);
-router.get("/:id", getStationSummary);
-router.get("/topology/:id", getStationInternalTopology);
+router.post("/create", verifyToken, createStation);
+router.get("/all", verifyToken, findAllStations);
+router.post("/bulk-update", verifyToken, bulkUpdateStations);
+router.get("/:id", verifyToken, getStationSummary);
+router.get("/topology/:id", verifyToken, getStationInternalTopology);
 
 export default router;

@@ -1,41 +1,49 @@
 import prisma from "../lib/prisma";
 
-// 1. CREATE Station
+// 1. CREATE Station (Auto-attach Division)
 const createStation = async (req, res) => {
-	const { code, name, section, subSection, mapX, mapY, createdById } = req.body;
+	const { code, name, mapX, mapY } = req.body;
 
-	// Validation
-	if (!code || !name || !createdById) {
-		return res
-			.status(400)
-			.json({ message: "Code, Name, and Creator ID are required!" });
-	}
+	// Values extracted from the Token via the Middleware
+	const userId = req.user.id;
+	const divisionId = req.user.divisionId;
 
 	try {
 		const station = await prisma.station.create({
 			data: {
 				code,
 				name,
-				section,
-				subSection,
-				mapX: parseFloat(mapX), // Ensure coordinates are Floats
-				mapY: parseFloat(mapY),
-				createdById, // ID of the user creating the station
+				divisionId,
+				createdById: userId,
+				mapX: parseFloat(mapX || 0),
+				mapY: parseFloat(mapY || 0),
 			},
 		});
-
-		res.status(201).json({ message: "Station created successfully!", station });
+		res.status(201).json({ message: "Station created!", station });
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
 };
 
-// 2. GET ALL Stations (For the React Flow Canvas)
+// 2. GET ALL Stations (Filtered by Division)
 const findAllStations = async (req, res) => {
+	const { divisionId, role } = req.user;
+
 	try {
-		const stations = await prisma.station.findMany({
-			include: { createdBy: { select: { name: true } } }, // Optional: include creator name
-		});
+		const queryOptions = {
+			where: {},
+			include: {
+				createdBy: { select: { name: true } },
+				subsection: true, // Include topology links
+			},
+		};
+
+		// If not SUPER_ADMIN, strictly filter by user's divisionId
+		if (role !== "SUPER_ADMIN") {
+			queryOptions.where.divisionId = divisionId;
+		}
+
+		const stations = await prisma.station.findMany(queryOptions);
 		res.status(200).json(stations);
 	} catch (error) {
 		res.status(500).json({ error: error.message });
@@ -45,16 +53,27 @@ const findAllStations = async (req, res) => {
 // 3. UPDATE Station (Used when dragging on the map)
 const updateStation = async (req, res) => {
 	const { id } = req.params;
+	const { divisionId, role } = req.user;
 	const data = req.body;
 
 	try {
+		// Find existing to check ownership/division
+		const existing = await prisma.station.findUnique({ where: { id } });
+
+		if (!existing)
+			return res.status(404).json({ message: "Station not found" });
+		if (role !== "SUPER_ADMIN" && existing.divisionId !== divisionId) {
+			return res
+				.status(403)
+				.json({ message: "Unauthorized to update this division's data" });
+		}
+
 		const updatedStation = await prisma.station.update({
 			where: { id },
 			data: {
 				...data,
-				// Ensure map coordinates remain Floats if updated
-				mapX: data.mapX ? parseFloat(data.mapX) : undefined,
-				mapY: data.mapY ? parseFloat(data.mapY) : undefined,
+				mapX: data.mapX !== undefined ? parseFloat(data.mapX) : undefined,
+				mapY: data.mapY !== undefined ? parseFloat(data.mapY) : undefined,
 			},
 		});
 		res.status(200).json({ message: "Station updated!", updatedStation });
@@ -66,57 +85,64 @@ const updateStation = async (req, res) => {
 // 4. DELETE Station
 const deleteStation = async (req, res) => {
 	const { id } = req.params;
+	const { divisionId, role } = req.user;
 
 	try {
-		await prisma.station.delete({
-			where: { id },
-		});
+		const station = await prisma.station.findUnique({ where: { id } });
+
+		if (role !== "SUPER_ADMIN" && station.divisionId !== divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		await prisma.station.delete({ where: { id } });
 		res.status(200).json({ message: "Station deleted successfully!" });
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
 };
 
+// 5. BULK UPDATE (For React Flow dragging)
 const bulkUpdateStations = async (req, res) => {
 	const { stations } = req.body;
+	const { divisionId, role } = req.user;
 
 	if (!Array.isArray(stations) || stations.length === 0) {
-		return res
-			.status(400)
-			.json({ message: "No station data provided for update." });
+		return res.status(400).json({ message: "No data provided." });
 	}
 
 	try {
-		// We use a transaction to ensure all updates are processed
-		const updateOperations = stations.map((station) =>
-			prisma.station.update({
-				where: { id: station.id },
+		const updateOperations = stations.map((st) =>
+			prisma.station.updateMany({
+				// updateMany allows us to add the divisionId safety check
+				where: {
+					id: st.id,
+					divisionId: role === "SUPER_ADMIN" ? undefined : divisionId,
+				},
 				data: {
-					mapX: parseFloat(station.mapX),
-					mapY: parseFloat(station.mapY),
+					mapX: parseFloat(st.mapX),
+					mapY: parseFloat(st.mapY),
 				},
 			}),
 		);
 
-		const updatedStations = await prisma.$transaction(updateOperations);
-
-		res.status(200).json({
-			message: `${updatedStations.length} stations updated successfully!`,
-			updatedStations,
-		});
+		await prisma.$transaction(updateOperations);
+		res.status(200).json({ message: "Layout saved successfully!" });
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
 };
 
-// controllers/station-controller.js
-
+// 6. INTERNAL TOPOLOGY (Rack/Equipment view)
 const getStationInternalTopology = async (req, res) => {
 	try {
-		const { id } = req.params; // Station ID
+		const { id } = req.params;
+		const { divisionId, role } = req.user;
 
-		const topology = await prisma.station.findUnique({
-			where: { id },
+		const topology = await prisma.station.findFirst({
+			where: {
+				id,
+				divisionId: role === "SUPER_ADMIN" ? undefined : divisionId,
+			},
 			include: {
 				locations: {
 					include: {
@@ -126,9 +152,7 @@ const getStationInternalTopology = async (req, res) => {
 									include: {
 										ports: {
 											include: {
-												// Fetch links where this port is the source
 												linksAsSource: true,
-												// Fetch links where this port is the target
 												linksAsTarget: true,
 											},
 										},
@@ -138,7 +162,6 @@ const getStationInternalTopology = async (req, res) => {
 						},
 					},
 				},
-				// Also fetch equipments that might not be in a rack (Loose equipment)
 				equipments: {
 					where: { rackId: null },
 					include: { ports: true },
@@ -146,28 +169,35 @@ const getStationInternalTopology = async (req, res) => {
 			},
 		});
 
-		if (!topology) return res.status(404).json({ error: "Station not found" });
-
+		if (!topology)
+			return res
+				.status(404)
+				.json({ error: "Station not found or unauthorized" });
 		res.status(200).json(topology);
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
 };
 
+// 7. SUMMARY
 const getStationSummary = async (req, res) => {
 	try {
 		const { id } = req.params;
+		const { divisionId, role } = req.user;
 
-		const summary = await prisma.station.findUnique({
-			where: { id },
+		const summary = await prisma.station.findFirst({
+			where: {
+				id,
+				divisionId: role === "SUPER_ADMIN" ? undefined : divisionId,
+			},
 			select: {
 				name: true,
 				code: true,
-				section: true,
+				subsection: { select: { name: true } },
 				_count: {
 					select: {
 						locations: true,
-						equipments: true, // Total devices in the station
+						equipments: true,
 					},
 				},
 			},
@@ -175,26 +205,16 @@ const getStationSummary = async (req, res) => {
 
 		if (!summary) return res.status(404).json({ error: "Station not found" });
 
-		// Since Racks are nested inside Locations, we fetch the rack count separately
-		// to get a clean total for the station.
 		const rackCount = await prisma.rack.count({
-			where: {
-				location: {
-					stationId: id,
-				},
-			},
+			where: { location: { stationId: id } },
 		});
 
-		const data = {
-			name: summary.name,
-			code: summary.code,
-			section: summary.section,
+		res.status(200).json({
+			...summary,
 			totalLocations: summary._count.locations,
 			totalRacks: rackCount,
 			totalDevices: summary._count.equipments,
-		};
-
-		res.status(200).json(data);
+		});
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
