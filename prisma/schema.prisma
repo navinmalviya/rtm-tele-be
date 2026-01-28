@@ -1,11 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "./generated/prisma"
 }
 
@@ -39,6 +33,44 @@ enum EquipmentCategory {
   PASSIVE         
 }
 
+enum EquipmentSubCategory {
+  L2_SWITCH
+  L3_SWITCH
+  ROUTER
+  WIFI_ROUTER
+  ACCESS_POINT
+  BATTERY_SET
+  UPS
+  CHARGER
+  SOLAR_CONTROLLER
+  STM_NODE
+  PD_MUX
+  MEDIA_CONVERTER
+  SERVER
+  WORKSTATION
+  LIU
+  PATCH_PANEL
+}
+
+enum PortCategory {
+  NETWORK
+  POWER
+}
+
+enum SFPType {
+  NOT_APPLICABLE
+  LC_SINGLE_POLE
+  LC_DUAL_POLE
+  SC_SIMPLEX
+}
+
+enum PortStatus {
+  FREE
+  IN_USE
+  FAULTY
+  RESERVED
+}
+
 enum AssetStatus {
   OPERATIONAL
   FAULTY
@@ -64,19 +96,13 @@ enum Frequency {
   YEARLY
 }
 
-enum PortType {
-  RJ45
-  SFP
-  FIBER_LC
-  FIBER_SC
-  E1
-  SERIAL
-  DC_TERMINAL
-  AC_PLUG
+enum NetworkMode {
+  ACCESS
+  TRUNK
 }
 
 // -----------------------------------------------------------------------------
-// 1. GEOGRAPHIC HIERARCHY (Zone > Division > Section > Subsection > Station)
+// 1. GEOGRAPHIC HIERARCHY
 // -----------------------------------------------------------------------------
 
 model Zone {
@@ -95,6 +121,7 @@ model Division {
   sections  Section[]
   users     User[]
   stations  Station[]
+  subsections Subsection[]
 }
 
 model Section {
@@ -109,46 +136,46 @@ model Section {
 model Subsection {
   id             String    @id @default(uuid())
   name           String
-  code           String    // e.g., "RTM-MRN"
-  sectionId      String
-  section        Section   @relation(fields: [sectionId], references: [id])
-
-  // Boundary logic: Identifying the specific block section
-  fromStationId  String
-  toStationId    String
-
+  code           String    
+  sectionId      String?
+  section        Section?   @relation(fields: [sectionId], references: [id])
+  fromStationId String
+  fromStation   Station  @relation("FromStationRelation", fields: [fromStationId], references: [id])
+  toStationId   String
+  toStation     Station  @relation("ToStationRelation", fields: [toStationId], references: [id])
+  divisionId    String
+  division      Division @relation(fields: [divisionId], references: [id])
+  createdById   String
+  createdBy     User     @relation(fields: [createdById], references: [id])
   stations       Station[] 
   cables         Cable[]
   socketTests    SocketTestingReport[]
-  tickets        Ticket[]  // Tickets can now be linked to a subsection
+  tickets        Ticket[]  
 }
 
 model Station {
   id             String                @id @default(uuid())
   code           String                @unique   
   name           String
-  
-  subsectionId   String?               // Optional because a station exists at boundaries
+  subsectionId   String?               
   subsection     Subsection?           @relation(fields: [subsectionId], references: [id])
   divisionId     String
   division       Division              @relation(fields: [divisionId], references: [id])
-
-  // Node Positioning for React-Flow
   mapX           Float                 @default(0)
   mapY           Float                 @default(0)
-
   locations      Location[]
   equipments     Equipment[]
-  tickets        Ticket[]              // For indoor/station-specific failures
+  tickets        Ticket[]              
   maintSchedules MaintenanceSchedule[]
-
+  subsectionsFrom Subsection[] @relation("FromStationRelation")
+  subsectionsTo   Subsection[] @relation("ToStationRelation")
   createdById    String
   createdBy      User                  @relation("UserStations", fields: [createdById], references: [id])
   createdAt      DateTime              @default(now())
 }
 
 // -----------------------------------------------------------------------------
-// 2. USER & PERSONNEL (Hierarchical)
+// 2. USER & PERSONNEL
 // -----------------------------------------------------------------------------
 
 model User {
@@ -159,16 +186,12 @@ model User {
   password     String
   role         UserRole @default(VIEWER)
   designation  String
-
   divisionId   String
   division     Division @relation(fields: [divisionId], references: [id])
-  
-  // Reporting Line (Incharge Logic)
   inchargeId   String?
   incharge     User?    @relation("InchargeChain", fields: [inchargeId], references: [id])
   subordinates User[]   @relation("InchargeChain")
-
-  // Operational Back-relations
+  subSections  Subsection[]
   reportedCableCuts    CableCut[]            @relation("Reporter")
   testedCableReports   CableTestReport[]     @relation("Tester")
   ackedCableReports    CableTestReport[]     @relation("TestAck")
@@ -177,89 +200,196 @@ model User {
   assignedTickets      Ticket[]              @relation("AssignedTo")
   movements            DailyMovement[]
   inspectionNotes      InspectionNote[]
-  
   stations             Station[]             @relation("UserStations")
   equipmentsCreated    Equipment[]           @relation("UserEquipments")
-
+  circuitAudits        CircuitAuditLog[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
 
 // -----------------------------------------------------------------------------
-// 3. ASSET MANAGEMENT (Templates & Instances)
+// 3. ASSET TEMPLATES & TOPOLOGY DEFINITION
 // -----------------------------------------------------------------------------
 
 model EquipmentTemplate {
-  id              String            @id @default(uuid())
-  brand           String            
-  modelName       String            @unique
+  id              String               @id @default(uuid())
+  make            String               
+  modelName       String               @unique 
   category        EquipmentCategory
-  uHeight         Int               @default(1)
-  codalLifeYears  Int               @default(12)
-  icon            String?           
+  subCategory     EquipmentSubCategory
+  uHeight         Int                  @default(1)
+  codalLifeYears  Int                  @default(12)
+  isModular       Boolean              @default(false)
+  supply          String               // "230V AC", "-48V DC"
 
-  networkTemplate NetworkTemplate?
-  portTemplates   PortTemplate[]
+  layer           Int?                 
+  isPoe           Boolean?             @default(false)             
+  switchingCapacity Float?             // in Gbps
+  
+  // --- UPS Specifics ---
+  capacityKva     Float?               // Capacity in KVA
+  operatingMode   String?              // e.g., "Online Double Conversion", "Line Interactive"
+  
+  // --- Battery Set Specifics ---
+  chemistry       String?              // "VRLA", "Lithium-ion", etc. (Type of battery)
+  defaultCellCount Int?                @default(1) // Number of batteries in set
+  capacityAh      Float?               // Ah rating per battery/set
+  nominalCellVolt  Float?              @default(2.0)
+
+  portTemplates     PortTemplate[] @relation("EquipmentToPorts")
   instances       Equipment[]
-}
-
-model NetworkTemplate {
-  id              String            @id @default(uuid())
-  templateId      String            @unique
-  template        EquipmentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  isPoe           Boolean           @default(false)
-  layer           Int               @default(2)
-  powerType       String?           // AC/DC
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 }
 
 model PortTemplate {
   id                  String            @id @default(uuid())
-  name                String            
-  type                PortType          @default(RJ45)
-  speed               String?
-  equipmentTemplateId String
-  equipmentTemplate   EquipmentTemplate @relation(fields: [equipmentTemplateId], references: [id], onDelete: Cascade)
+  name                String            // e.g., "GigabitEthernet", "Power Input"
+  // High-level grouping
+  category          PortCategory      @default(NETWORK)
+  
+  // Specific connector (Passed as string from Frontend options)
+  type              String
+  speed               String?           // e.g., "1 Gbps"
+  
+  // SFP Specifics
+  isSFPInserted       Boolean           @default(false)
+  sfpType             SFPType           @default(NOT_APPLICABLE)
+  
+  // Power Specifics
+  voltage             String?           // e.g., "230V AC"
+  equipmentTemplates EquipmentTemplate[] @relation("EquipmentToPorts")
+  
+  instances           Port[]
 }
+
+// -----------------------------------------------------------------------------
+// 4. LIVE EQUIPMENT & PIN-LEVEL TOPOLOGY
+// -----------------------------------------------------------------------------
 
 model Equipment {
   id               String            @id @default(uuid())
-  name             String            
+  name             String  
+  description      String   
+  providedBy      String       
   serialNumber     String?           @unique
-  
+  assetTag         String?           @unique 
   templateId       String
   template         EquipmentTemplate @relation(fields: [templateId], references: [id])
-
-  networkDetails   NetworkInstance?
-
   stationId        String
   station          Station           @relation(fields: [stationId], references: [id])
   rackId           String?
   rack             Rack?             @relation(fields: [rackId], references: [id])
   uPosition        Int?              
-
   status           AssetStatus       @default(OPERATIONAL)
-  ports            Port[]
-  trcRequests      TRCRequest[]
+  installationDate DateTime?
+  
+  // For Battery Sets: Every cell is an entry in the DB
+  batteryCells     BatteryCell[]     
+  
+  // Actual Ports for React-Flow handles
+  ports            Port[]            
+  
+  // Logical association with circuits
+  circuits         Circuit[]         @relation("EquipmentCircuits")
 
   createdById      String
   createdBy        User              @relation("UserEquipments", fields: [createdById], references: [id])
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+  trcRequests      TRCRequest[]
 }
 
-model NetworkInstance {
+model BatteryCell {
+  id              String    @id @default(uuid())
+  cellIndex       Int       // 1 to 24
+  voltage         Float     @default(2.0)
+  status          AssetStatus @default(OPERATIONAL)
+  equipmentId     String
+  equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+}
+
+
+model Port {
+  id              String      @id @default(uuid())
+  name            String      // e.g., "GigabitEthernet 1"
+  description     String?     
+  status          PortStatus  @default(FREE)
+  
+  // Logical Networking
+  portMode        NetworkMode @default(ACCESS)
+  vlans           String?     
+  ipPool          String?     
+
+  // Relation to Circuits
+  circuits        Circuit[]   @relation("PortCircuits")
+
+  // Connectivity
+  linkAsSource    PortLink?   @relation("SourcePort")
+  linkAsTarget    PortLink?   @relation("TargetPort")
+  
+  equipmentId     String
+  equipment       Equipment   @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  templateId      String
+  template        PortTemplate @relation(fields: [templateId], references: [id])
+}
+
+model PortLink {
   id               String    @id @default(uuid())
-  equipmentId      String    @unique
-  equipment        Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  mgmtIp           String?
-  mgmtSubnet       String?
-  mgmtGateway      String?
-  role             String?   // LER, AGR, etc.
-  networkDomain    String?   // FOIS, RAILNET
+  
+  // Physical Connection Logic
+  sourcePortId     String    @unique // Ensures a port only has one outgoing cable
+  source           Port      @relation("SourcePort", fields: [sourcePortId], references: [id], onDelete: Cascade)
+  
+  targetPortId     String    @unique // Ensures a port only has one incoming cable
+  target           Port      @relation("TargetPort", fields: [targetPortId], references: [id], onDelete: Cascade)
+  
+  // Physical Cable Detail
+  mediaType        String?   // e.g. "Cat6", "Single Mode Fiber", "Twinax"
+  cableColor       String?   // Optional: helpful for site engineers
+  length           Float?    // Optional: meters
+  
+  // Optional link to a logical circuit
+  circuitId        String?
+  circuits         Circuit[] @relation("LinkCircuits")
+
+  @@unique([sourcePortId, targetPortId])
 }
 
 // -----------------------------------------------------------------------------
-// 4. TICKETING & WORKFLOW (Accountability)
+// 5. LOGICAL CIRCUITS & AUDIT TRAIL
+// -----------------------------------------------------------------------------
+
+model Circuit {
+  id              String            @id @default(uuid())
+  circuitIdString String            @unique // e.g., "RTM-PRS-01"
+  description     String?
+  status          AssetStatus       @default(OPERATIONAL)
+  
+  // Relations: A circuit is composed of many parts
+  equipments      Equipment[]       @relation("EquipmentCircuits")
+  ports           Port[]            @relation("PortCircuits")
+  links           PortLink[]        @relation("LinkCircuits")
+
+  auditLogs       CircuitAuditLog[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+model CircuitAuditLog {
+  id              String    @id @default(uuid())
+  circuitId       String
+  circuit         Circuit   @relation(fields: [circuitId], references: [id])
+  action          String    // e.g. "PORT_MIGRATION"
+  description     String    // e.g. "Moved from Port 11 to 12 due to faulty port"
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  createdAt       DateTime  @default(now())
+}
+
+// -----------------------------------------------------------------------------
+// 6. REMAINING OPERATIONAL MODELS (Tickets, Cables, etc.)
 // -----------------------------------------------------------------------------
 
 model Ticket {
@@ -269,22 +399,16 @@ model Ticket {
   description     String
   status          String      
   priority        String      
-  
-  // Logic to distinguish location
-  stationId       String?     // If indoor/at station
+  stationId       String?     
   station         Station?    @relation(fields: [stationId], references: [id])
-  
-  subsectionId    String?     // If outdoor/between stations
+  subsectionId    String?     
   subsection      Subsection? @relation(fields: [subsectionId], references: [id])
-  
   createdById     String
   createdBy       User        @relation("CreatedBy", fields: [createdById], references: [id])
   assignedToId    String?
   assignedTo      User?       @relation("AssignedTo", fields: [assignedToId], references: [id])
-  
   cableCut        CableCut?
   trcRequest      TRCRequest?
-
   createdAt       DateTime    @default(now())
 }
 
@@ -292,27 +416,20 @@ model TRCRequest {
   id              String    @id @default(uuid())
   ticketId        String    @unique
   ticket          Ticket    @relation(fields: [ticketId], references: [id])
-  
   equipmentId     String
   equipment       Equipment @relation(fields: [equipmentId], references: [id])
-  
-  status          String    // SENT, RECEIVED, UNDER_REPAIR, REPAIRED, UNREPAIRABLE
+  status          String    
   certificateNo   String?   
   receivedDate    DateTime?
   returnDate      DateTime?
 }
 
-// -----------------------------------------------------------------------------
-// 5. EXTERNAL PLANT (Cables, Cuts & Testing)
-// -----------------------------------------------------------------------------
-
 model Cable {
   id              String            @id @default(uuid())
-  type            String            // OFC, 6-QUAD
-  maintenanceBy   String            // RCIL, RAILWAY
+  type            String            
+  maintenanceBy   String            
   subsectionId    String
   subsection      Subsection        @relation(fields: [subsectionId], references: [id])
-  
   cuts            CableCut[]
   joints          Joint[]
   testReports     CableTestReport[]
@@ -324,15 +441,12 @@ model CableCut {
   cable               Cable     @relation(fields: [cableId], references: [id])
   ticketId            String    @unique
   ticket              Ticket    @relation(fields: [ticketId], references: [id])
-
   reportedById        String
   reportedBy          User      @relation("Reporter", fields: [reportedById], references: [id])
-
   locationKM          String
   cutDateTime         DateTime  @default(now())
   restorationDateTime DateTime? 
   putRightDetails     String?   
-  
   isAckByIncharge     Boolean   @default(false)
   isAckByTestroom     Boolean   @default(false)
 }
@@ -340,15 +454,12 @@ model CableCut {
 model CableTestReport {
   id                String    @id @default(uuid())
   cableId           String
-  cable             Cable     @relation(fields: [cableId], references: [id])
-  
+  cable               Cable     @relation(fields: [cableId], references: [id])
   testedById        String
   testedBy          User      @relation("Tester", fields: [testedById], references: [id])
-
   testDate          DateTime  @default(now())
   insulationRes     String?
   dbLoss            Float?
-  
   isAckByIncharge   Boolean   @default(false)
   ackByInchargeById String?
   ackByInchargeBy   User?     @relation("TestAck", fields: [ackByInchargeById], references: [id])
@@ -358,7 +469,7 @@ model SocketTestingReport {
   id                String     @id @default(uuid())
   locationKM        String
   subsectionId      String
-  subsection        Subsection @relation(fields: [subsectionId], references: [id])
+  subsection      Subsection @relation(fields: [subsectionId], references: [id])
   testedById        String
   testedBy          User       @relation("SocketTester", fields: [testedById], references: [id])
   isFunctional      Boolean    @default(true)
@@ -371,10 +482,6 @@ model Joint {
   cableId         String
   cable           Cable    @relation(fields: [cableId], references: [id])
 }
-
-// -----------------------------------------------------------------------------
-// 6. DAILY LOGS, INSPECTIONS & SCHEDULES
-// -----------------------------------------------------------------------------
 
 model MaintenanceSchedule {
   id              String    @id @default(uuid())
@@ -404,10 +511,6 @@ model DailyMovement {
   user            User      @relation(fields: [userId], references: [id])
 }
 
-// -----------------------------------------------------------------------------
-// 7. PHYSICAL TOPOLOGY (Racks, Ports & Links)
-// -----------------------------------------------------------------------------
-
 model Location {
   id          String    @id @default(uuid())
   name        String   
@@ -423,23 +526,3 @@ model Rack {
   location    Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
   equipments  Equipment[]
 }
-
-model Port {
-  id               String            @id @default(uuid())
-  name             String            
-  type             PortType          @default(RJ45)
-  equipmentId      String
-  equipment        Equipment         @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  linksAsSource    PortLink[]        @relation("PortLinkSource")
-  linksAsTarget    PortLink[]        @relation("PortLinkTarget")
-}
-
-model PortLink {
-  id               String    @id @default(uuid())
-  sourcePortId     String
-  source           Port      @relation("PortLinkSource", fields: [sourcePortId], references: [id], onDelete: Cascade)
-  targetPortId     String
-  target           Port      @relation("PortLinkTarget", fields: [targetPortId], references: [id], onDelete: Cascade)
-  @@unique([sourcePortId, targetPortId])
-}
-

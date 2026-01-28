@@ -4,10 +4,13 @@ import express from "express";
 
 import authRoutes from "./src/routes/auth-routes.js";
 import equipmentRoutes from "./src/routes/equipment-routes.js";
+import equipmentTemplateRoutes from "./src/routes/equipment-template-routes.js";
 import locationRoutes from "./src/routes/location-routes.js";
 import portRoutes from "./src/routes/port-routes.js";
+import portTemplateRoutes from "./src/routes/port-template-routes.js";
 import rackRoutes from "./src/routes/rack-routes.js";
 import stationRoutes from "./src/routes/station-routes.js";
+import subSectionroutes from "./src/routes/sub-section-routes.js";
 
 const app = express();
 
@@ -30,6 +33,9 @@ app.use("/location", locationRoutes);
 app.use("/rack", rackRoutes);
 app.use("/equipment", equipmentRoutes);
 app.use("/port", portRoutes);
+app.use("/subsection", subSectionroutes);
+app.use("/equipment-template", equipmentTemplateRoutes);
+app.use("/port-template", portTemplateRoutes);
 
 app.listen(3001, () => {
 	console.log("server is running on 3001");

@@ -41,7 +41,13 @@ const create = async (req, res) => {
 };
 
 const signin = async (req, res) => {
-	// ... (keep your validation and findUnique logic)
+	const { username, password } = req.body;
+
+	if (!username || !password) {
+		return res
+			.status(400)
+			.json({ message: "Username and password are required!" });
+	}
 
 	try {
 		const user = await prisma.user.findUnique({

@@ -74,27 +74,29 @@ async function main() {
 
 	// 4. CREATE SUBSECTIONS (The Block Sections / Edges)
 	// This explicitly creates the links you requested
-	const sub1 = await prisma.subsection.create({
-		data: {
-			name: "Ratlam-Morwani Block",
-			code: "RTM-MRN",
-			sectionId: section.id,
-			fromStationId: stnRtm.id,
-			toStationId: stnMrn.id,
-		},
-	});
+	// const sub1 = await prisma.subsection.create({
+	// 	data: {
+	// 		name: "Ratlam-Morwani Block",
+	// 		code: "RTM-MRN",
+	// 		sectionId: section.id,
+	// 		fromStationId: stnRtm.id,
+	// 		toStationId: stnMrn.id,
+	// 		createdById: admin.id,
+	// 	},
+	// });
 
-	const sub2 = await prisma.subsection.create({
-		data: {
-			name: "Morwani-Bildi Block",
-			code: "MRN-BILD",
-			sectionId: section.id,
-			fromStationId: stnMrn.id,
-			toStationId: stnBild.id,
-		},
-	});
+	// const sub2 = await prisma.subsection.create({
+	// 	data: {
+	// 		name: "Morwani-Bildi Block",
+	// 		code: "MRN-BILD",
+	// 		sectionId: section.id,
+	// 		fromStationId: stnMrn.id,
+	// 		toStationId: stnBild.id,
+	// 		createdById: admin.id,
+	// 	},
+	// });
 
-	console.log(`Created Subsections: ${sub1.code} and ${sub2.code}`);
+	// console.log(`Created Subsections: ${sub1.code} and ${sub2.code}`);
 
 	// 5. CREATE ALL USER TYPES
 	const users = [
