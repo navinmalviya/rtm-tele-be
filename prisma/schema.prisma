@@ -225,16 +225,22 @@ model EquipmentTemplate {
   layer           Int?                 
   isPoe           Boolean?             @default(false)             
   switchingCapacity Float?             // in Gbps
+  isMPLSEnables    Boolean            @default(false)
   
   // --- UPS Specifics ---
   capacityKva     Float?               // Capacity in KVA
   operatingMode   String?              // e.g., "Online Double Conversion", "Line Interactive"
   
   // --- Battery Set Specifics ---
-  chemistry       String?              // "VRLA", "Lithium-ion", etc. (Type of battery)
+  batteryType       String?              // "VRLA", "Lithium-ion", etc. (Type of battery)
   defaultCellCount Int?                @default(1) // Number of batteries in set
   capacityAh      Float?               // Ah rating per battery/set
   nominalCellVolt  Float?              @default(2.0)
+
+  // Charger specifics
+  isSMRBased      Boolean?
+
+  portConfigs EquipmentPortConfig[]
 
   portTemplates     PortTemplate[] @relation("EquipmentToPorts")
   instances       Equipment[]
@@ -259,8 +265,24 @@ model PortTemplate {
   // Power Specifics
   voltage             String?           // e.g., "230V AC"
   equipmentTemplates EquipmentTemplate[] @relation("EquipmentToPorts")
+  equipmentConfigs    EquipmentPortConfig[]
   
   instances           Port[]
+}
+
+model EquipmentPortConfig {
+  id                  String            @id @default(uuid())
+  quantity            Int               @default(1)
+  
+  // Relations
+  equipmentTemplate   EquipmentTemplate @relation(fields: [equipmentTemplateId], references: [id], onDelete: Cascade)
+  equipmentTemplateId String
+  
+  portTemplate        PortTemplate      @relation(fields: [portTemplateId], references: [id])
+  portTemplateId      String
+
+  // Prevents adding the same port type twice to one piece of equipment
+  @@unique([equipmentTemplateId, portTemplateId]) 
 }
 
 // -----------------------------------------------------------------------------

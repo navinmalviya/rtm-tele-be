@@ -14,13 +14,16 @@ const createEquipmentTemplate = async (req, res) => {
 		layer,
 		isPoe,
 		switchingCapacity,
+		isMPLSEnables,
 		capacityKva,
 		operatingMode,
-		chemistry,
+		batteryType,
 		defaultCellCount,
 		capacityAh,
 		nominalCellVolt,
-		portTemplateIds, // Array of UUIDs
+		isSMRBased,
+		// NEW: Expecting an array of objects: [{ portTemplateId: 'uuid', quantity: 24 }]
+		portConfigs,
 	} = req.body;
 
 	try {
@@ -31,34 +34,48 @@ const createEquipmentTemplate = async (req, res) => {
 				category,
 				subCategory,
 				supply,
-				uHeight: parseInt(uHeight || 1),
-				codalLifeYears: parseInt(codalLifeYears || 12),
+				uHeight: Number.parseInt(uHeight || 1),
+				codalLifeYears: Number.parseInt(codalLifeYears || 12),
 				isModular: isModular === true || isModular === "true",
 
 				// Networking Specifics
-				layer: layer ? parseInt(layer) : null,
+				layer: layer ? Number.parseInt(layer) : null,
 				isPoe: isPoe === true || isPoe === "true",
 				switchingCapacity: switchingCapacity
-					? parseFloat(switchingCapacity)
+					? Number.parseFloat(switchingCapacity)
 					: null,
+				isMPLSEnables: isMPLSEnables === true || isMPLSEnables === "true",
 
 				// UPS Specifics
-				capacityKva: capacityKva ? parseFloat(capacityKva) : null,
+				capacityKva: capacityKva ? Number.parseFloat(capacityKva) : null,
 				operatingMode: operatingMode || null,
 
 				// Battery Specifics
-				chemistry: chemistry || null,
-				defaultCellCount: defaultCellCount ? parseInt(defaultCellCount) : 1,
-				capacityAh: capacityAh ? parseFloat(capacityAh) : null,
-				nominalCellVolt: nominalCellVolt ? parseFloat(nominalCellVolt) : 2.0,
+				batteryType: batteryType || null,
+				defaultCellCount: defaultCellCount
+					? Number.parseInt(defaultCellCount)
+					: 1,
+				capacityAh: capacityAh ? Number.parseFloat(capacityAh) : null,
+				nominalCellVolt: nominalCellVolt
+					? Number.parseFloat(nominalCellVolt)
+					: 2.0,
 
-				// Many-to-Many Connection
-				portTemplates: {
-					connect: portTemplateIds?.map((id) => ({ id })) || [],
+				// Charger Specifics
+				isSMRBased: isSMRBased === true || isSMRBased === "true",
+
+				// NEW: Explicit Join Table Connection
+				portConfigs: {
+					create:
+						portConfigs?.map((cfg) => ({
+							quantity: Number.parseInt(cfg.quantity || 1),
+							portTemplateId: cfg.portTemplateId,
+						})) || [],
 				},
 			},
 			include: {
-				portTemplates: true,
+				portConfigs: {
+					include: { portTemplate: true },
+				},
 			},
 		});
 
@@ -76,7 +93,10 @@ const findAllEquipmentTemplates = async (req, res) => {
 	try {
 		const templates = await prisma.equipmentTemplate.findMany({
 			include: {
-				portTemplates: true,
+				// Include the bridge and the actual port data
+				portConfigs: {
+					include: { portTemplate: true },
+				},
 				_count: {
 					select: { instances: true },
 				},
@@ -92,33 +112,53 @@ const findAllEquipmentTemplates = async (req, res) => {
 // 3. UPDATE Equipment Template
 const updateEquipmentTemplate = async (req, res) => {
 	const { id } = req.params;
-	const { portTemplateIds, ...updateData } = req.body;
+	const { portConfigs, ...updateData } = req.body;
 
 	try {
 		const updatedTemplate = await prisma.equipmentTemplate.update({
 			where: { id },
 			data: {
 				...updateData,
-				// Ensure proper typing for updates
-				uHeight: updateData.uHeight ? parseInt(updateData.uHeight) : undefined,
+				uHeight: updateData.uHeight
+					? Number.parseInt(updateData.uHeight)
+					: undefined,
 				codalLifeYears: updateData.codalLifeYears
-					? parseInt(updateData.codalLifeYears)
+					? Number.parseInt(updateData.codalLifeYears)
 					: undefined,
 				isModular:
 					updateData.isModular !== undefined
 						? updateData.isModular === true || updateData.isModular === "true"
 						: undefined,
+				isPoe:
+					updateData.isPoe !== undefined
+						? updateData.isPoe === true || updateData.isPoe === "true"
+						: undefined,
+				isMPLSEnables:
+					updateData.isMPLSEnables !== undefined
+						? updateData.isMPLSEnables === true ||
+							updateData.isMPLSEnables === "true"
+						: undefined,
+				isSMRBased:
+					updateData.isSMRBased !== undefined
+						? updateData.isSMRBased === true || updateData.isSMRBased === "true"
+						: undefined,
 
-				// Handle Many-to-Many Port Refresh
-				portTemplates: portTemplateIds
+				// NEW: Handle Join Table Refresh
+				// We delete all existing configs for this template and create new ones
+				portConfigs: portConfigs
 					? {
-							set: [], // Clear old relationships
-							connect: portTemplateIds.map((pid) => ({ id: pid })),
+							deleteMany: {},
+							create: portConfigs.map((cfg) => ({
+								quantity: Number.parseInt(cfg.quantity),
+								portTemplateId: cfg.portTemplateId,
+							})),
 						}
 					: undefined,
 			},
 			include: {
-				portTemplates: true,
+				portConfigs: {
+					include: { portTemplate: true },
+				},
 			},
 		});
 
@@ -147,6 +187,8 @@ const deleteEquipmentTemplate = async (req, res) => {
 			});
 		}
 
+		// Note: Because of 'onDelete: Cascade' in Prisma schema,
+		// portConfigs rows will be automatically deleted.
 		await prisma.equipmentTemplate.delete({ where: { id } });
 		res.status(200).json({ message: "Template deleted successfully!" });
 	} catch (error) {
@@ -154,14 +196,19 @@ const deleteEquipmentTemplate = async (req, res) => {
 	}
 };
 
-// 5. GET SINGLE Template
+// 5. GET SINGLE Template Details
 const getEquipmentTemplateDetails = async (req, res) => {
 	const { id } = req.params;
 	try {
 		const template = await prisma.equipmentTemplate.findUnique({
 			where: { id },
-			include: { portTemplates: true },
+			include: {
+				portConfigs: {
+					include: { portTemplate: true },
+				},
+			},
 		});
+
 		if (!template) return res.status(404).json({ error: "Template not found" });
 		res.status(200).json(template);
 	} catch (error) {
