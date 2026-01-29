@@ -101,6 +101,13 @@ enum NetworkMode {
   TRUNK
 }
 
+enum RackType {
+    WALL_MOUNTED
+    FLOOR_STANDING
+    OUTDOOR_CABINET
+    BATTERY_STAND
+}
+
 // -----------------------------------------------------------------------------
 // 1. GEOGRAPHIC HIERARCHY
 // -----------------------------------------------------------------------------
@@ -535,7 +542,8 @@ model DailyMovement {
 
 model Location {
   id          String    @id @default(uuid())
-  name        String   
+  name        String  
+  description String 
   stationId   String
   station     Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
   racks       Rack[]
@@ -543,6 +551,9 @@ model Location {
 
 model Rack {
   id          String      @id @default(uuid())
+  description String
+  heightU     Int
+  type        RackType
   name        String    
   locationId  String
   location    Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)

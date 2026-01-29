@@ -15,7 +15,7 @@ const createLocation = async (req, res) => {
 		const newLocation = await prisma.location.create({
 			data: {
 				name,
-				description,
+				description: description, // Mapping 'description' from req to 'description' in DB
 				stationId,
 			},
 		});
@@ -37,7 +37,7 @@ const findStationLocations = async (req, res) => {
 			where: { stationId },
 			include: {
 				_count: {
-					select: { racks: true }, // Show how many racks are in each room
+					select: { racks: true },
 				},
 			},
 		});
@@ -59,7 +59,9 @@ const getLocationDetails = async (req, res) => {
 					include: {
 						equipments: {
 							include: {
-								ports: true,
+								portConfigs: {
+									include: { portTemplate: true },
+								},
 							},
 						},
 					},
@@ -85,7 +87,10 @@ const updateLocation = async (req, res) => {
 	try {
 		const updatedLocation = await prisma.location.update({
 			where: { id },
-			data: { name, description },
+			data: {
+				name,
+				description: description, // Mapping here as well
+			},
 		});
 
 		res

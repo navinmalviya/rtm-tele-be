@@ -2,12 +2,31 @@ import prisma from "../lib/prisma.js";
 
 export const createRack = async (req, res) => {
 	try {
-		const { name, type, heightU, locationId } = req.body;
+		// 1. Destructure rackData from the body (matching your frontend payload)
+		console.log("re", req.body);
+		const { name, type, heightU, locationId, description } = req.body;
+
+		// Validation: Ensure mandatory fields exist before calling Prisma
+		if (!name || !locationId) {
+			return res.status(400).json({
+				error: "Rack Name and Location ID are required.",
+			});
+		}
+
 		const rack = await prisma.rack.create({
-			data: { name, type, heightU, locationId },
+			data: {
+				name,
+				type,
+				heightU: Number(heightU), // Ensure this is a number
+				locationId,
+				description: description || "", // Fallback to empty string if missing
+			},
 		});
+
 		res.status(201).json(rack);
 	} catch (error) {
+		// Detailed error logging for debugging
+		console.error("Prisma Create Error:", error.message);
 		res.status(500).json({ error: error.message });
 	}
 };
@@ -18,7 +37,7 @@ export const findRacksByLocation = async (req, res) => {
 		const racks = await prisma.rack.findMany({
 			where: { locationId },
 			include: {
-				_count: { select: { equipments: true } }, // Quick view of rack load
+				_count: { select: { equipments: true } },
 			},
 			orderBy: { name: "asc" },
 		});
@@ -32,7 +51,6 @@ export const findRacksByStation = async (req, res) => {
 	try {
 		const { stationId } = req.params;
 
-		// Validation
 		if (!stationId) {
 			return res.status(400).json({ message: "Station ID is required!" });
 		}
@@ -45,7 +63,7 @@ export const findRacksByStation = async (req, res) => {
 			},
 			include: {
 				location: {
-					select: { name: true }, // Helpful to know which room the rack is in
+					select: { name: true },
 				},
 				_count: {
 					select: { equipments: true },
@@ -65,7 +83,8 @@ export const updateRack = async (req, res) => {
 		const { id } = req.params;
 		const updatedRack = await prisma.rack.update({
 			where: { id },
-			data: req.body,
+			// If updating from the drawer, wrap this in { rackData } check if needed
+			data: req.body.rackData || req.body,
 		});
 		res.status(200).json(updatedRack);
 	} catch (error) {
