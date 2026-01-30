@@ -302,7 +302,6 @@ model Equipment {
   description      String   
   providedBy      String       
   serialNumber     String?           @unique
-  assetTag         String?           @unique 
   templateId       String
   template         EquipmentTemplate @relation(fields: [templateId], references: [id])
   stationId        String
@@ -312,6 +311,9 @@ model Equipment {
   uPosition        Int?              
   status           AssetStatus       @default(OPERATIONAL)
   installationDate DateTime?
+  DateOfLastMaintenace DateTime?
+  mapX           Float                 @default(0)
+  mapY           Float                 @default(0)
   
   // For Battery Sets: Every cell is an entry in the DB
   batteryCells     BatteryCell[]     
