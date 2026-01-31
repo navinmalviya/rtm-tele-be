@@ -46,6 +46,8 @@ export const createEquipment = async (req, res) => {
 				uPosition: uPosition ? Number.parseInt(uPosition) : null,
 				installationDate: installationDate ? new Date(installationDate) : null,
 				status: "OPERATIONAL",
+				mapX: null,
+				mapY: null,
 				// Connect Relations (Required by your strict schema)
 				template: { connect: { id: templateId } },
 				station: { connect: { id: stationId } },

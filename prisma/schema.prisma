@@ -312,8 +312,8 @@ model Equipment {
   status           AssetStatus       @default(OPERATIONAL)
   installationDate DateTime?
   DateOfLastMaintenace DateTime?
-  mapX           Float                 @default(0)
-  mapY           Float                 @default(0)
+  mapX           Float?                 
+  mapY           Float?                 
   
   // For Battery Sets: Every cell is an entry in the DB
   batteryCells     BatteryCell[]     
