@@ -6,6 +6,7 @@ import authRoutes from "./src/routes/auth-routes.js";
 import equipmentRoutes from "./src/routes/equipment-routes.js";
 import equipmentTemplateRoutes from "./src/routes/equipment-template-routes.js";
 import locationRoutes from "./src/routes/location-routes.js";
+import portLinkRoutes from "./src/routes/port-link-routes.js";
 import portRoutes from "./src/routes/port-routes.js";
 import portTemplateRoutes from "./src/routes/port-template-routes.js";
 import rackRoutes from "./src/routes/rack-routes.js";
@@ -36,6 +37,7 @@ app.use("/port", portRoutes);
 app.use("/subsection", subSectionroutes);
 app.use("/equipment-template", equipmentTemplateRoutes);
 app.use("/port-template", portTemplateRoutes);
+app.use("/port-link", portLinkRoutes);
 
 app.listen(3001, () => {
 	console.log("server is running on 3001");
