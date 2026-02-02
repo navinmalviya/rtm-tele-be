@@ -2,6 +2,7 @@ import express from "express";
 import {
 	createPortLink,
 	deletePortLink,
+	getAllLinks,
 	getAvailablePortsByStation,
 	getLinkDetails,
 	getStationLinks,
@@ -13,6 +14,7 @@ const router = express.Router();
 router.post("/", createPortLink);
 router.get("/station/:stationId", getStationLinks);
 router.get("/station/:stationId", getStationLinks);
+router.get("/all", getAllLinks);
 router.delete("/:id", deletePortLink);
 router.get("/:id", getLinkDetails);
 router.patch("/:id", updatePortLink);

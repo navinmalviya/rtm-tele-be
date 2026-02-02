@@ -190,3 +190,37 @@ export const getAvailablePortsByStation = async (req, res) => {
 		res.status(500).json({ error: error.message });
 	}
 };
+
+export const getAllLinks = async (req, res) => {
+	try {
+		const links = await prisma.portLink.findMany({
+			include: {
+				source: {
+					select: {
+						id: true,
+						equipment: {
+							select: {
+								stationId: true,
+							},
+						},
+					},
+				},
+				target: {
+					select: {
+						id: true,
+						equipment: {
+							select: {
+								stationId: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		res.status(200).json(links);
+	} catch (error) {
+		console.error("Error fetching all links:", error);
+		res.status(500).json({ error: error.message });
+	}
+};
