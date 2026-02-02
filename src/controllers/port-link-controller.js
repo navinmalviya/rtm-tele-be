@@ -42,6 +42,75 @@ export const createPortLink = async (req, res) => {
 	}
 };
 
+export const getLinkDetails = async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		const link = await prisma.portLink.findUnique({
+			where: { id },
+			include: {
+				source: {
+					include: {
+						equipment: true, // Get the device name/info
+					},
+				},
+				target: {
+					include: {
+						equipment: true,
+					},
+				},
+			},
+		});
+
+		if (!link) {
+			return res.status(404).json({ error: "Port link not found." });
+		}
+
+		res.status(200).json(link);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+export const updatePortLink = async (req, res) => {
+	try {
+		const { id } = req.params;
+		const { mediaType, cableColor, length, circuitId } = req.body;
+
+		// Verify existence first
+		const linkExists = await prisma.portLink.findUnique({
+			where: { id },
+		});
+
+		if (!linkExists) {
+			return res.status(404).json({ error: "Port link not found." });
+		}
+
+		const updatedLink = await prisma.portLink.update({
+			where: { id },
+			data: {
+				mediaType,
+				cableColor,
+				length: length ? Number.parseFloat(length) : null,
+				circuitId,
+			},
+			include: {
+				source: {
+					include: { equipment: true },
+				},
+				target: {
+					include: { equipment: true },
+				},
+			},
+		});
+
+		res.status(200).json(updatedLink);
+	} catch (error) {
+		console.error("Update PortLink Error:", error);
+		res.status(500).json({ error: error.message });
+	}
+};
+
 export const deletePortLink = async (req, res) => {
 	try {
 		const { id } = req.params;
@@ -77,6 +146,47 @@ export const getStationLinks = async (req, res) => {
 
 		res.status(200).json(links);
 	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+export const getAvailablePortsByStation = async (req, res) => {
+	try {
+		const { stationId } = req.params;
+
+		// Using your schema's specific relation names: linkAsSource and linkAsTarget
+		const availablePorts = await prisma.port.findMany({
+			where: {
+				equipment: {
+					stationId: stationId,
+				},
+				// A port is available only if both link relations are null
+				linkAsSource: null,
+				linkAsTarget: null,
+			},
+			include: {
+				equipment: {
+					select: {
+						id: true,
+						name: true,
+					},
+				},
+			},
+			orderBy: [
+				{
+					equipment: {
+						name: "asc",
+					},
+				},
+				{
+					name: "asc",
+				},
+			],
+		});
+
+		res.status(200).json(availablePorts);
+	} catch (error) {
+		console.error("Error in getAvailablePortsByStation:", error);
 		res.status(500).json({ error: error.message });
 	}
 };
