@@ -9,6 +9,7 @@ import locationRoutes from "./src/routes/location-routes.js";
 import portLinkRoutes from "./src/routes/port-link-routes.js";
 import portRoutes from "./src/routes/port-routes.js";
 import portTemplateRoutes from "./src/routes/port-template-routes.js";
+import projectRoutes from "./src/routes/project-routes.js";
 import rackRoutes from "./src/routes/rack-routes.js";
 import stationRoutes from "./src/routes/station-routes.js";
 import subSectionroutes from "./src/routes/sub-section-routes.js";
@@ -38,6 +39,7 @@ app.use("/subsection", subSectionroutes);
 app.use("/equipment-template", equipmentTemplateRoutes);
 app.use("/port-template", portTemplateRoutes);
 app.use("/port-link", portLinkRoutes);
+app.use("/project", projectRoutes);
 
 app.listen(3001, () => {
 	console.log("server is running on 3001");

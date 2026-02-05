@@ -79,12 +79,11 @@ enum AssetStatus {
   DECOMMISSIONED
 }
 
-enum TicketType {
+enum TaskType {
   FAILURE
   TRC
   MAINTENANCE
-  COMPLAINT
-  INSTALLATION
+  PROJECT
 }
 
 enum Frequency {
@@ -106,6 +105,34 @@ enum RackType {
     FLOOR_STANDING
     OUTDOOR_CABINET
     BATTERY_STAND
+}
+
+enum FailureType {
+    AXLE_COUTER
+    BLOCK
+    SECTION_CONTROL
+    TPC_CONTROL
+    SI_CONTROL
+    PRS
+    FOIS
+    AUTO_PHONE
+    RAILNET
+    CMS_SERVER
+    CGDB_BOARD
+    PA_SYSTEM
+    MISC
+}
+
+enum CauseOfFailure {
+    EQUIPMENT_FAILURE
+    PATCH_CORD_FAILURE
+    CABLE_CUT
+    CABLE_DAMAGED
+    PORT_FAILURE
+    KRONE_FAILURE
+    WAGO_FAILURE
+    LOW_INSULATION
+    HIGH_LOSS
 }
 
 // -----------------------------------------------------------------------------
@@ -141,41 +168,54 @@ model Section {
 }
 
 model Subsection {
-  id             String    @id @default(uuid())
-  name           String
-  code           String    
-  sectionId      String?
-  section        Section?   @relation(fields: [sectionId], references: [id])
+  id            String    @id @default(uuid())
+  name          String
+  code          String    
+  sectionId     String?
+  section       Section?  @relation(fields: [sectionId], references: [id])
+  
+  // Boundary definitions
   fromStationId String
-  fromStation   Station  @relation("FromStationRelation", fields: [fromStationId], references: [id])
+  fromStation   Station   @relation("FromStationRelation", fields: [fromStationId], references: [id])
   toStationId   String
-  toStation     Station  @relation("ToStationRelation", fields: [toStationId], references: [id])
+  toStation     Station   @relation("ToStationRelation", fields: [toStationId], references: [id])
+  
   divisionId    String
-  division      Division @relation(fields: [divisionId], references: [id])
+  division      Division  @relation(fields: [divisionId], references: [id])
   createdById   String
-  createdBy     User     @relation(fields: [createdById], references: [id])
-  stations       Station[] 
-  cables         Cable[]
-  socketTests    SocketTestingReport[]
-  tickets        Ticket[]  
+  createdBy     User      @relation(fields: [createdById], references: [id])
+  
+  // Implicit Many-to-Many: A subsection has many stations
+  stations      Station[] 
+  failures       Failure[]
+  
+  cables        Cable[]
+  socketTests   SocketTestingReport[]
 }
 
 model Station {
   id             String                @id @default(uuid())
   code           String                @unique   
   name           String
-  subsectionId   String?               
-  subsection     Subsection?           @relation(fields: [subsectionId], references: [id])
+  
+  // UPDATED: A station can now belong to multiple subsections
+  subsections    Subsection[]          
+  
   divisionId     String
   division       Division              @relation(fields: [divisionId], references: [id])
   mapX           Float                 @default(0)
   mapY           Float                 @default(0)
   locations      Location[]
-  equipments     Equipment[]
-  tickets        Ticket[]              
+  equipments     Equipment[]           
   maintSchedules MaintenanceSchedule[]
+
+  failures       Failure[]   // Link to failures at this station
+  maintenances   Maintenance[] // Link to maintenance at this station
+
+  // Explicit relations for block boundaries
   subsectionsFrom Subsection[] @relation("FromStationRelation")
   subsectionsTo   Subsection[] @relation("ToStationRelation")
+  
   createdById    String
   createdBy      User                  @relation("UserStations", fields: [createdById], references: [id])
   createdAt      DateTime              @default(now())
@@ -203,8 +243,10 @@ model User {
   testedCableReports   CableTestReport[]     @relation("Tester")
   ackedCableReports    CableTestReport[]     @relation("TestAck")
   testedSocketReports  SocketTestingReport[] @relation("SocketTester")
-  createdTickets       Ticket[]              @relation("CreatedBy")
-  assignedTickets      Ticket[]              @relation("AssignedTo")
+  createdTasks       Task[]              @relation("CreatedBy")
+  assignedTasks      Task[]              @relation("AssignedTo")
+  projects       Project[]  // Relation to projects they own
+  comments       Comment[]  // Relation to comments they author
   movements            DailyMovement[]
   inspectionNotes      InspectionNote[]
   stations             Station[]             @relation("UserStations")
@@ -313,7 +355,10 @@ model Equipment {
   installationDate DateTime?
   DateOfLastMaintenace DateTime?
   mapX           Float?                 
-  mapY           Float?                 
+  mapY           Float?         
+
+  maintenances   Maintenance[]
+  trcRequests    TRCRequest[]        
   
   // For Battery Sets: Every cell is an entry in the DB
   batteryCells     BatteryCell[]     
@@ -328,7 +373,6 @@ model Equipment {
   createdBy        User              @relation("UserEquipments", fields: [createdById], references: [id])
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
-  trcRequests      TRCRequest[]
 }
 
 model BatteryCell {
@@ -420,33 +464,101 @@ model CircuitAuditLog {
 }
 
 // -----------------------------------------------------------------------------
-// 6. REMAINING OPERATIONAL MODELS (Tickets, Cables, etc.)
+// 6. REMAINING OPERATIONAL MODELS (Tasks, Cables, etc.)
 // -----------------------------------------------------------------------------
 
-model Ticket {
+model Project {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  status        String   @default("PLANNED") // PLANNED, ONGOING, COMPLETED
+  totalProgress Float    @default(0) 
+  
+  tasks         Task[]   // All tasks linked to this project
+  
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id])
+  startDate     DateTime
+  endDate       DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Task {
   id              String      @id @default(uuid())
   title           String      
-  type            TicketType  
+  type            TaskType  
   description     String
-  status          String      
-  priority        String      
-  stationId       String?     
-  station         Station?    @relation(fields: [stationId], references: [id])
-  subsectionId    String?     
-  subsection      Subsection? @relation(fields: [subsectionId], references: [id])
-  createdById     String
-  createdBy       User        @relation("CreatedBy", fields: [createdById], references: [id])
+  status          String      @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  priority        String      @default("MEDIUM")
+  
+  // Weightage: Optional. Only used if type == PROJECT 
+  // or if the task is part of a Project
+  weight          Float?      
+
+  // Project Link
+  projectId       String?
+  project         Project?    @relation(fields: [projectId], references: [id])
+
+  // Technical Sub-tables (1-to-1)
+  failure         Failure?    
+  trcRequest      TRCRequest? 
+  maintenance     Maintenance?
+
+  // Social/Communication
+  comments        Comment[]
+
+  // Ownership & Responsibility
+  ownerId         String
+  owner           User        @relation("CreatedBy", fields: [ownerId], references: [id])
   assignedToId    String?
   assignedTo      User?       @relation("AssignedTo", fields: [assignedToId], references: [id])
-  cableCut        CableCut?
-  trcRequest      TRCRequest?
+  
   createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model Comment {
+  id          String   @id @default(uuid())
+  content     String   @db.Text
+  attachment  String?  
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model Failure {
+    id              String         @id @default(uuid())
+    taskId          String         @unique
+    task            Task           @relation(fields: [taskId], references: [id])
+    
+    type            FailureType
+    cause           CauseOfFailure
+    
+    // Geographic Context
+    locationId      String?     
+    location        Location?      @relation(fields: [locationId], references: [id])
+    subsectionId    String?     
+    subsection      Subsection?    @relation(fields: [subsectionId], references: [id])
+
+    stationId       String?        // Add this back if you want direct Station access
+    station         Station?       @relation(fields: [stationId], references: [id])
+
+    // Specific Chain for Cable Issues
+    cableCutId      String?        @unique
+    cableCut        CableCut?      @relation(fields: [cableCutId], references: [id])
+    
+    restorationTime DateTime?
+    remarks         String?
 }
 
 model TRCRequest {
   id              String    @id @default(uuid())
-  ticketId        String    @unique
-  ticket          Ticket    @relation(fields: [ticketId], references: [id])
+  taskId        String    @unique
+  task          Task    @relation(fields: [taskId], references: [id])
+  
   equipmentId     String
   equipment       Equipment @relation(fields: [equipmentId], references: [id])
   status          String    
@@ -470,16 +582,16 @@ model CableCut {
   id                  String    @id @default(uuid())
   cableId             String
   cable               Cable     @relation(fields: [cableId], references: [id])
-  ticketId            String    @unique
-  ticket              Ticket    @relation(fields: [ticketId], references: [id])
+  
+  // Back-relation to Failure (The chain)
+  failure             Failure?  
+
   reportedById        String
   reportedBy          User      @relation("Reporter", fields: [reportedById], references: [id])
   locationKM          String
   cutDateTime         DateTime  @default(now())
   restorationDateTime DateTime? 
-  putRightDetails     String?   
-  isAckByIncharge     Boolean   @default(false)
-  isAckByTestroom     Boolean   @default(false)
+  putRightDetails     String?
 }
 
 model CableTestReport {
@@ -547,6 +659,8 @@ model Location {
   name        String  
   description String 
   stationId   String
+  failures       Failure[]
+  maintenances   Maintenance[]
   station     Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
   racks       Rack[]
 }
@@ -560,4 +674,22 @@ model Rack {
   locationId  String
   location    Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
   equipments  Equipment[]
+}
+
+model Maintenance {
+  id                String    @id @default(uuid())
+  taskId            String    @unique
+  task              Task      @relation(fields: [taskId], references: [id])
+  
+  date              DateTime  @default(now())
+  
+  // Geographic/Asset Context
+  locationId        String?     
+  location          Location?  @relation(fields: [locationId], references: [id])
+  stationId         String?    
+  station           Station?   @relation(fields: [stationId], references: [id])
+  equipmentId       String?
+  equipment         Equipment? @relation(fields: [equipmentId], references: [id])
+  
+  remarks           String?
 }
