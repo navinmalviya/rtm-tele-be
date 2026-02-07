@@ -33,8 +33,19 @@ const findAllStations = async (req, res) => {
 		const queryOptions = {
 			where: {},
 			include: {
-				createdBy: { select: { name: true } },
-				subsection: true, // Include topology links
+				createdBy: {
+					select: { name: true },
+				},
+				// FIX: Changed from 'subsection' to 'subsections' to match schema back-relations
+				subsections: true,
+				// Optional: You might also want to include these for the dashboard
+				_count: {
+					select: {
+						locations: true,
+						equipments: true,
+						failures: true,
+					},
+				},
 			},
 		};
 

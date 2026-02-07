@@ -13,6 +13,8 @@ import projectRoutes from "./src/routes/project-routes.js";
 import rackRoutes from "./src/routes/rack-routes.js";
 import stationRoutes from "./src/routes/station-routes.js";
 import subSectionroutes from "./src/routes/sub-section-routes.js";
+import taskRoutes from "./src/routes/task-routes.js";
+import userRoutes from "./src/routes/user-routes.js";
 
 const app = express();
 
@@ -40,6 +42,8 @@ app.use("/equipment-template", equipmentTemplateRoutes);
 app.use("/port-template", portTemplateRoutes);
 app.use("/port-link", portLinkRoutes);
 app.use("/project", projectRoutes);
+app.use("/task", taskRoutes);
+app.use("/user", userRoutes);
 
 app.listen(3001, () => {
 	console.log("server is running on 3001");

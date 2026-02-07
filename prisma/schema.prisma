@@ -186,7 +186,7 @@ model Subsection {
   createdBy     User      @relation(fields: [createdById], references: [id])
   
   // Implicit Many-to-Many: A subsection has many stations
-  stations      Station[] 
+//   stations      Station[] 
   failures       Failure[]
   
   cables        Cable[]
