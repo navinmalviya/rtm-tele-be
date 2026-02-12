@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 
 import authRoutes from "./src/routes/auth-routes.js";
+import cableRoutes from "./src/routes/cable-routes.js";
 import equipmentRoutes from "./src/routes/equipment-routes.js";
 import equipmentTemplateRoutes from "./src/routes/equipment-template-routes.js";
 import locationRoutes from "./src/routes/location-routes.js";
@@ -44,6 +45,7 @@ app.use("/port-link", portLinkRoutes);
 app.use("/project", projectRoutes);
 app.use("/task", taskRoutes);
 app.use("/user", userRoutes);
+app.use("/cable", cableRoutes);
 
 app.listen(3001, () => {
 	console.log("server is running on 3001");

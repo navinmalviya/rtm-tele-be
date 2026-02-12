@@ -24,6 +24,11 @@ enum UserRole {
   MAINTAINER
 }
 
+enum TrackSide {
+	UP
+	DOWN
+}
+
 enum EquipmentCategory {
   NETWORKING      
   POWER           
@@ -133,6 +138,23 @@ enum CauseOfFailure {
     WAGO_FAILURE
     LOW_INSULATION
     HIGH_LOSS
+}
+
+enum CableType {
+    PIJF
+    OFC
+    SWITCHBOARD_CABLE
+}
+
+enum CableSubType {
+    PAIR_10
+    PAIR_20
+    PAIR_50
+    QUAD_6
+    CAT_6
+    OFC_48
+    OFC_24
+    OFC_6
 }
 
 // -----------------------------------------------------------------------------
@@ -247,6 +269,13 @@ model User {
   assignedTasks      Task[]              @relation("AssignedTo")
   projects       Project[]  // Relation to projects they own
   comments       Comment[]  // Relation to comments they author
+  // --- EC Testing Relations ---
+	
+	// Sockets where this user was the 'testedBy' (The person in the field)
+	EcSocketsTestedByMe    EcTesting[] @relation("FieldTestingAssignment")
+	
+	// Sockets where this user was the 'testedWith' (The person in the Testroom)
+	EcSocketsTestedWithMe  EcTesting[] @relation("TestroomVerificationAssignment")
   movements            DailyMovement[]
   inspectionNotes      InspectionNote[]
   stations             Station[]             @relation("UserStations")
@@ -437,19 +466,24 @@ model PortLink {
 // -----------------------------------------------------------------------------
 
 model Circuit {
-  id              String            @id @default(uuid())
-  circuitIdString String            @unique // e.g., "RTM-PRS-01"
-  description     String?
-  status          AssetStatus       @default(OPERATIONAL)
-  
-  // Relations: A circuit is composed of many parts
-  equipments      Equipment[]       @relation("EquipmentCircuits")
-  ports           Port[]            @relation("PortCircuits")
-  links           PortLink[]        @relation("LinkCircuits")
+	id              String            @id @default(uuid())
+	circuitIdString String            @unique // e.g., "RTM-PRS-01"
+	description     String?
+	status          AssetStatus       @default(OPERATIONAL)
+	
+	// Relations: Transmission Media
+	// A circuit can occupy multiple pairs or fibers (e.g., 2 pairs for certain Block instruments)
+	copperPairs     CopperPair[]      @relation("CircuitToPairs")
+	fibers          Fiber[]           @relation("CircuitToFibers")
 
-  auditLogs       CircuitAuditLog[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+	// Relations: Network Infrastructure
+	equipments      Equipment[]       @relation("EquipmentCircuits")
+	ports           Port[]            @relation("PortCircuits")
+	links           PortLink[]        @relation("LinkCircuits")
+
+	auditLogs       CircuitAuditLog[]
+	createdAt       DateTime          @default(now())
+	updatedAt       DateTime          @updatedAt
 }
 
 model CircuitAuditLog {
@@ -567,15 +601,119 @@ model TRCRequest {
   returnDate      DateTime?
 }
 
+model CableTemplate {
+  id            String       @id @default(uuid())
+  name          String       @unique
+  type          CableType
+  subType       CableSubType
+  
+  // Logical Structure
+  quadCount     Int          @default(0) // For Quad/PIJF cables
+  pairCount     Int          @default(0) // For PIJF/Switchboard
+  fiberCount    Int          @default(0) // For OFC
+  tubeCount     Int          @default(0) // For OFC (fibers per tube)
+  
+  cables        Cable[]      @relation("TemplateToCable")
+  createdAt     DateTime     @default(now())
+}
+
 model Cable {
-  id              String            @id @default(uuid())
-  type            String            
-  maintenanceBy   String            
-  subsectionId    String
-  subsection      Subsection        @relation(fields: [subsectionId], references: [id])
-  cuts            CableCut[]
-  joints          Joint[]
-  testReports     CableTestReport[]
+	id                  String            @id @default(uuid())
+	type                CableType    
+	subType             CableSubType        
+	maintenanceBy       String            // Authority / In-charge
+	length              String            // Cable length in meters
+	dateOfCommissioning DateTime?
+	side                TrackSide         // UP or DOWN side of track
+	
+	// Structural Metadata for Auto-Generation
+	quadCount           Int               @default(0)
+	pairCount           Int               @default(0)
+	fiberCount          Int               @default(0)
+	tubeCount           Int               @default(0)
+	
+	// Geographic/Hierarchy Relations
+	subsectionId        String
+	subsection          Subsection        @relation(fields: [subsectionId], references: [id])
+	
+	// Child Asset Collections
+	copperPairs         CopperPair[]
+	fibers              Fiber[]
+	ecSockets           EcSocket[]
+	
+	// Maintenance & Reliability Records
+	cuts                CableCut[]
+	joints              Joint[]
+	testReports     CableTestReport[]
+	
+	createdAt           DateTime          @default(now())
+	updatedAt           DateTime          @updatedAt
+}
+
+model CopperPair {
+	id          String    @id @default(uuid())
+	quadNo      Int       // e.g., 1 to 6
+	quadColor   String?   // Ribbon color
+	pairNo      Int       // 1 to 4 per quad
+	pairColor   String    // White/Orange, etc.
+	
+	// Relation to Circuit
+	circuits    Circuit[] @relation("CircuitToPairs")
+	
+	cableId     String
+	cable       Cable     @relation(fields: [cableId], references: [id], onDelete: Cascade)
+}
+
+model Fiber {
+	id          String    @id @default(uuid())
+	tubeNo      Int       
+	tubeColor   String   
+	fiberNo     Int       
+	fiberColor  String   
+	
+	// Relation to Circuit
+	circuits    Circuit[] @relation("CircuitToFibers")
+	
+	cableId     String
+	cable       Cable     @relation(fields: [cableId], references: [id], onDelete: Cascade)
+}
+
+model EcSocket {
+	id                  String      @id @default(uuid())
+	poleKm              String      // e.g., '542/12'
+	
+	// Relations
+	cableId             String
+	cable               Cable       @relation(fields: [cableId], references: [id], onDelete: Cascade)
+	
+	// History of all tests performed on this specific socket
+	testHistory         EcTesting[]
+
+	createdAt           DateTime    @default(now())
+}
+
+model EcTesting {
+	id                  String    @id @default(uuid())
+	testedOn            DateTime  @default(now())
+	
+	// Physical Status during this specific test
+	isPainted           Boolean   @default(false)
+	isPlatformProper    Boolean   @default(false)
+	communication       Boolean   @default(true)
+	socketPoleHeight    String    // Recorded height at the time of testing
+	remarks             String?
+
+	// Accountability
+	// This must match the string in the User model exactly
+	testedById          String?
+	testedBy            User?     @relation("FieldTestingAssignment", fields: [testedById], references: [id])
+	
+	testWithId          String?
+	testedWith          User?     @relation("TestroomVerificationAssignment", fields: [testWithId], references: [id])
+	
+	// Relation to the physical socket
+	socketId            String
+	socket              EcSocket  @relation(fields: [socketId], references: [id], onDelete: Cascade)
 }
 
 model CableCut {
