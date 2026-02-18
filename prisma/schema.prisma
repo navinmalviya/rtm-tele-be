@@ -30,36 +30,64 @@ enum TrackSide {
 }
 
 enum EquipmentCategory {
-  NETWORKING      
-  POWER           
-  TRANSMISSION    
-  COMPUTING       
-  SENSORS         
-  PASSIVE         
+	NETWORKING
+	POWER
+	TRANSMISSION
+	SIGNALLING        // Added for FR-1.1 & Railway Specifics
+	PASSENGER_AMENITIES // Added for FR-2.a
+	SECURITY          // Added for FR-2.b (CCTV)
+	COMPUTING
+	SENSORS
+	PASSIVE
 }
 
 enum EquipmentSubCategory {
-  L2_SWITCH
-  L3_SWITCH
-  ROUTER
-  WIFI_ROUTER
-  ACCESS_POINT
-  BATTERY_SET
-  UPS
-  CHARGER
-  SOLAR_CONTROLLER
-  STM_NODE
-  PD_MUX
-  MEDIA_CONVERTER
-  SERVER
-  WORKSTATION
-  LIU
-  PATCH_PANEL
+	// Networking
+	L2_SWITCH
+	L3_SWITCH
+	ROUTER
+	WIFI_ROUTER
+	ACCESS_POINT
+	FIREWALL
+
+	// Power
+	BATTERY_SET
+	UPS
+	CHARGER
+	SOLAR_CONTROLLER
+	SMR               // Switch Mode Rectifier
+
+	// Transmission
+	STM_NODE
+	PD_MUX
+	MEDIA_CONVERTER
+	MRO_MUX           // Managed Reachability Options
+
+	// Signalling (New)
+	BPAC
+	BLOCK_INSTRUMENT
+	UFSBI
+	HASSDAC
+	KAVACH_UNIT       // Added for FR-3
+
+	// Passenger Amenities & Security (New)
+	PA_SYSTEM         // Public Address
+	PIDS_BOARD        // Passenger Info Display
+	CCTV_CAMERA
+	NVR_VMS           // Network Video Recorder
+
+	// Computing & Passive
+	SERVER
+	WORKSTATION
+	LIU
+	PATCH_PANEL
+	CT_BOX            // Cable Termination Box
 }
 
 enum PortCategory {
   NETWORK
   POWER
+  SERIAL
 }
 
 enum SFPType {
@@ -201,6 +229,7 @@ model Subsection {
   fromStation   Station   @relation("FromStationRelation", fields: [fromStationId], references: [id])
   toStationId   String
   toStation     Station   @relation("ToStationRelation", fields: [toStationId], references: [id])
+  stations      Station[]
   
   divisionId    String
   division      Division  @relation(fields: [divisionId], references: [id])
@@ -601,22 +630,6 @@ model TRCRequest {
   returnDate      DateTime?
 }
 
-model CableTemplate {
-  id            String       @id @default(uuid())
-  name          String       @unique
-  type          CableType
-  subType       CableSubType
-  
-  // Logical Structure
-  quadCount     Int          @default(0) // For Quad/PIJF cables
-  pairCount     Int          @default(0) // For PIJF/Switchboard
-  fiberCount    Int          @default(0) // For OFC
-  tubeCount     Int          @default(0) // For OFC (fibers per tube)
-  
-  cables        Cable[]      @relation("TemplateToCable")
-  createdAt     DateTime     @default(now())
-}
-
 model Cable {
 	id                  String            @id @default(uuid())
 	type                CableType    
@@ -730,6 +743,8 @@ model CableCut {
   cutDateTime         DateTime  @default(now())
   restorationDateTime DateTime? 
   putRightDetails     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model CableTestReport {
@@ -762,6 +777,8 @@ model Joint {
   location        String   
   cableId         String
   cable           Cable    @relation(fields: [cableId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model MaintenanceSchedule {

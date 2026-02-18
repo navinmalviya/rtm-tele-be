@@ -154,7 +154,22 @@ const getStationInternalTopology = async (req, res) => {
 				id,
 				divisionId: role === "SUPER_ADMIN" ? undefined : divisionId,
 			},
-			include: {
+			select: {
+				id: true,
+				name: true,
+				code: true,
+				// FIX: Changed 'subsection' to 'subsections' to match your schema
+				subsections: {
+					select: {
+						name: true,
+					},
+				},
+				_count: {
+					select: {
+						locations: true,
+						equipments: true,
+					},
+				},
 				locations: {
 					include: {
 						racks: {
@@ -180,10 +195,12 @@ const getStationInternalTopology = async (req, res) => {
 			},
 		});
 
-		if (!topology)
+		if (!topology) {
 			return res
 				.status(404)
 				.json({ error: "Station not found or unauthorized" });
+		}
+
 		res.status(200).json(topology);
 	} catch (error) {
 		res.status(500).json({ error: error.message });
@@ -204,7 +221,7 @@ const getStationSummary = async (req, res) => {
 			select: {
 				name: true,
 				code: true,
-				subsection: { select: { name: true } },
+				subsections: { select: { name: true } },
 				_count: {
 					select: {
 						locations: true,

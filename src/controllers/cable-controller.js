@@ -64,11 +64,13 @@ export const cableController = {
 						orderBy: { poleKm: "asc" },
 					},
 					cuts: {
-						orderBy: { createdAt: "desc" },
+						// FIX: Use cutDateTime instead of createdAt
+						orderBy: { cutDateTime: "desc" },
 						include: { reportedBy: { select: { name: true } } },
 					},
 					joints: {
-						orderBy: { createdAt: "desc" },
+						// FIX: Use id or another existing field if createdAt is missing
+						orderBy: { id: "desc" },
 					},
 				},
 			});
