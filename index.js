@@ -16,6 +16,9 @@ import stationRoutes from "./src/routes/station-routes.js";
 import subSectionroutes from "./src/routes/sub-section-routes.js";
 import taskRoutes from "./src/routes/task-routes.js";
 import userRoutes from "./src/routes/user-routes.js";
+import maintenanceScheduleRoutes from "./src/routes/maintenance-schedule-routes.js";
+import cron from "node-cron";
+import { runMaintenanceRemindersJob } from "./src/lib/maintenance-runner.js";
 
 const app = express();
 
@@ -46,6 +49,22 @@ app.use("/project", projectRoutes);
 app.use("/task", taskRoutes);
 app.use("/user", userRoutes);
 app.use("/cable", cableRoutes);
+app.use("/maintenance", maintenanceScheduleRoutes);
+
+if (process.env.ENABLE_SCHEDULER !== "false") {
+	cron.schedule(
+		"30 0 * * *",
+		async () => {
+			try {
+				const result = await runMaintenanceRemindersJob(new Date());
+				console.log("[maintenance] reminders ran:", result);
+			} catch (error) {
+				console.error("[maintenance] reminders failed:", error.message);
+			}
+		},
+		{ timezone: process.env.SCHEDULER_TZ || "Asia/Kolkata" },
+	);
+}
 
 app.listen(3001, () => {
 	console.log("server is running on 3001");
