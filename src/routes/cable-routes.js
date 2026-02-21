@@ -34,6 +34,14 @@ router.post(
 	cableController.createCable,
 );
 
+// Add EC socket to a cable
+router.post(
+	"/:id/ec-socket",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	cableController.createEcSocket,
+);
+
 // Update cable metadata (length, maintenance authority, etc.)
 router.patch(
 	"/update/:id",

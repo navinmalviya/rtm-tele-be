@@ -223,6 +223,8 @@ model Subsection {
   code          String    
   sectionId     String?
   section       Section?  @relation(fields: [sectionId], references: [id])
+  startKm       Float?
+  endKm         Float?
   
   // Boundary definitions
   fromStationId String
@@ -653,6 +655,7 @@ model Cable {
 	copperPairs         CopperPair[]
 	fibers              Fiber[]
 	ecSockets           EcSocket[]
+	sideSegments        CableSideSegment[]
 	
 	// Maintenance & Reliability Records
 	cuts                CableCut[]
@@ -661,6 +664,16 @@ model Cable {
 	
 	createdAt           DateTime          @default(now())
 	updatedAt           DateTime          @updatedAt
+}
+
+model CableSideSegment {
+	id        String    @id @default(uuid())
+	cableId   String
+	cable     Cable     @relation(fields: [cableId], references: [id], onDelete: Cascade)
+	fromKm    Float
+	toKm      Float
+	side      TrackSide
+	createdAt DateTime  @default(now())
 }
 
 model CopperPair {

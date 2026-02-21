@@ -2,7 +2,7 @@ import prisma from "../lib/prisma";
 
 // 1. CREATE Sub-section (Connects two stations)
 const createSubSection = async (req, res) => {
-	const { code, name, fromStationId, toStationId } = req.body;
+	const { code, name, fromStationId, toStationId, startKm, endKm } = req.body;
 
 	const userId = req.user.id;
 	const divisionId = req.user.divisionId;
@@ -23,12 +23,27 @@ const createSubSection = async (req, res) => {
 			});
 		}
 
+		const parsedStart = startKm !== undefined && startKm !== "" ? Number.parseFloat(startKm) : null;
+		const parsedEnd = endKm !== undefined && endKm !== "" ? Number.parseFloat(endKm) : null;
+
+		if (
+			parsedStart !== null &&
+			parsedEnd !== null &&
+			Number.isFinite(parsedStart) &&
+			Number.isFinite(parsedEnd) &&
+			parsedStart >= parsedEnd
+		) {
+			return res.status(400).json({ message: "Start KM must be less than End KM." });
+		}
+
 		const subSection = await prisma.subsection.create({
 			data: {
 				code,
 				name,
 				fromStationId,
 				toStationId,
+				startKm: parsedStart,
+				endKm: parsedEnd,
 				divisionId,
 				createdById: userId,
 			},
@@ -132,13 +147,7 @@ const getSubSectionDetails = async (req, res) => {
 			include: {
 				fromStation: true,
 				toStation: true,
-				// You might want to see what links/fibers pass through this subsection
-				links: {
-					include: {
-						sourcePort: { include: { equipment: true } },
-						targetPort: { include: { equipment: true } },
-					},
-				},
+				section: { select: { name: true, code: true } },
 			},
 		});
 

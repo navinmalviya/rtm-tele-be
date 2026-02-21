@@ -29,6 +29,7 @@ export const cableController = {
 			const cables = await prisma.cable.findMany({
 				where: { subsectionId },
 				include: {
+					sideSegments: true,
 					_count: {
 						select: {
 							cuts: true,
@@ -54,6 +55,9 @@ export const cableController = {
 			const cable = await prisma.cable.findUnique({
 				where: { id },
 				include: {
+					subsection: {
+						select: { id: true, startKm: true, endKm: true },
+					},
 					copperPairs: {
 						orderBy: [{ quadNo: "asc" }, { pairNo: "asc" }],
 					},
@@ -62,6 +66,9 @@ export const cableController = {
 					},
 					ecSockets: {
 						orderBy: { poleKm: "asc" },
+					},
+					sideSegments: {
+						orderBy: { fromKm: "asc" },
 					},
 					cuts: {
 						// FIX: Use cutDateTime instead of createdAt
@@ -85,6 +92,49 @@ export const cableController = {
 		}
 	},
 
+	createEcSocket: async (req, res) => {
+		try {
+			const { id } = req.params;
+			const { poleKm } = req.body;
+
+			if (!poleKm || !String(poleKm).trim()) {
+				return res.status(400).json({ message: "Pole KM is required." });
+			}
+
+			const cable = await prisma.cable.findUnique({
+				where: { id },
+				include: { subsection: { select: { startKm: true, endKm: true } } },
+			});
+
+			if (!cable) {
+				return res.status(404).json({ message: "Cable not found." });
+			}
+
+			const rangeStart = cable.subsection?.startKm;
+			const rangeEnd = cable.subsection?.endKm;
+			const kmMatch = String(poleKm).match(/^\s*(\d+(\.\d+)?)/);
+			if (rangeStart !== null && rangeEnd !== null && kmMatch) {
+				const kmValue = Number.parseFloat(kmMatch[1]);
+				if (kmValue < rangeStart || kmValue > rangeEnd) {
+					return res.status(400).json({
+						message: `Pole KM must be within subsection range ${rangeStart}-${rangeEnd}.`,
+					});
+				}
+			}
+
+			const socket = await prisma.ecSocket.create({
+				data: {
+					poleKm: String(poleKm).trim(),
+					cableId: id,
+				},
+			});
+
+			res.status(201).json(socket);
+		} catch (error) {
+			res.status(500).json({ error: error.message });
+		}
+	},
+
 	// 3. Create Cable + Auto-generate Quads/Fibers based on provided logic
 	createCable: async (req, res) => {
 		try {
@@ -100,7 +150,44 @@ export const cableController = {
 				pairCount,
 				fiberCount,
 				tubeCount,
+				sideSegments,
 			} = req.body;
+
+			const subsection = await prisma.subsection.findUnique({
+				where: { id: subsectionId },
+				select: { startKm: true, endKm: true },
+			});
+
+			let parsedSegments = [];
+			if (typeof sideSegments === "string") {
+				try {
+					parsedSegments = JSON.parse(sideSegments);
+				} catch {
+					parsedSegments = [];
+				}
+			} else if (Array.isArray(sideSegments)) {
+				parsedSegments = sideSegments;
+			}
+
+			if (parsedSegments.length) {
+				const rangeStart = subsection?.startKm;
+				const rangeEnd = subsection?.endKm;
+				const invalid = parsedSegments.some((segment) => {
+					const fromKm = Number.parseFloat(segment.fromKm);
+					const toKm = Number.parseFloat(segment.toKm);
+					if (!Number.isFinite(fromKm) || !Number.isFinite(toKm)) return true;
+					if (fromKm >= toKm) return true;
+					if (rangeStart !== null && rangeStart !== undefined && fromKm < rangeStart) return true;
+					if (rangeEnd !== null && rangeEnd !== undefined && toKm > rangeEnd) return true;
+					return false;
+				});
+
+				if (invalid) {
+					return res.status(400).json({
+						message: "Side segments must be within subsection KM range.",
+					});
+				}
+			}
 
 			const result = await prisma.$transaction(async (tx) => {
 				// A. Create Master Cable Entry
@@ -121,6 +208,28 @@ export const cableController = {
 						tubeCount: Number.parseInt(tubeCount || 0),
 					},
 				});
+
+				// A2. Side Segments (optional)
+				if (parsedSegments.length) {
+					const segmentRows = parsedSegments
+						.map((segment) => ({
+							cableId: cable.id,
+							fromKm: Number.parseFloat(segment.fromKm),
+							toKm: Number.parseFloat(segment.toKm),
+							side: segment.side,
+						}))
+						.filter(
+							(segment) =>
+								Number.isFinite(segment.fromKm) &&
+								Number.isFinite(segment.toKm) &&
+								segment.fromKm < segment.toKm &&
+								segment.side
+						);
+
+					if (segmentRows.length) {
+						await tx.cableSideSegment.createMany({ data: segmentRows });
+					}
+				}
 
 				// B. Generate Copper Pairs (Standard Star-Quad Logic)
 				if (type === "PIJF" || subType === "QUAD_6") {
