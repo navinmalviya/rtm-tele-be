@@ -42,6 +42,14 @@ router.post(
 	cableController.createEcSocket,
 );
 
+// Connect a pair/fiber to an equipment via a new circuit
+router.post(
+	"/connect-media",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	cableController.connectMediaToEquipment,
+);
+
 // Update cable metadata (length, maintenance authority, etc.)
 router.patch(
 	"/update/:id",

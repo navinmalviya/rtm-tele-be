@@ -119,7 +119,7 @@ export const updateTaskStatus = async (req, res) => {
 	try {
 		const currentTask = await prisma.task.findUnique({
 			where: { id },
-			select: { assignedToId: true, type: true, failure: { select: { sseInchargeRemark: true } }, projectId: true },
+			select: { assignedToId: true, type: true, projectId: true },
 		});
 
 		if (!currentTask) {
@@ -131,17 +131,6 @@ export const updateTaskStatus = async (req, res) => {
 				return res
 					.status(403)
 					.json({ message: "Only the assignee can close this task." });
-			}
-		}
-
-		if (status === "CLOSED") {
-			if (currentTask?.type === "FAILURE") {
-				if (!currentTask.failure?.sseInchargeRemark) {
-					return res.status(400).json({
-						message:
-							"Cannot close failure ticket without SSE (Incharge) remarks.",
-					});
-				}
 			}
 		}
 
@@ -253,24 +242,30 @@ export const upsertFailureForTask = async (req, res) => {
 			return res.status(400).json({ message: "Task is not a FAILURE type." });
 		}
 
+		const cleanedFailureData = {
+			type: failureData.type,
+			cause: failureData.cause,
+			locationId: failureData.locationId || null,
+			subsectionId: failureData.subsectionId || null,
+			stationId: failureData.stationId || null,
+			restorationTime: failureData.restorationTime || null,
+			remarks: failureData.remarks || null,
+			cableCutId: failureData.cableCutId || null,
+		};
+
 		let failure;
 		if (task.failure) {
 			failure = await prisma.failure.update({
 				where: { taskId },
 				data: {
-					...failureData,
+					...cleanedFailureData,
 				},
 			});
 		} else {
-			const failureReportedAt = new Date();
-			const slaDueAt = computeSlaDueAt(failureReportedAt, task.priority);
 			failure = await prisma.failure.create({
 				data: {
-					...failureData,
+					...cleanedFailureData,
 					taskId,
-					failureReportedAt,
-					slaDueAt,
-					escalationLevel: 1,
 				},
 			});
 		}
@@ -318,24 +313,15 @@ export const addSseInchargeRemark = async (req, res) => {
 	}
 
 	try {
-		const failure = await prisma.failure.findUnique({
-			where: { taskId },
-		});
-
-		if (!failure) {
-			return res.status(404).json({ message: "Failure record not found." });
-		}
-
-		const updated = await prisma.failure.update({
-			where: { taskId },
+		const comment = await prisma.comment.create({
 			data: {
-				sseInchargeRemark: remark.trim(),
-				sseInchargeRemarkAt: new Date(),
-				sseInchargeById: userId,
+				content: `SSE Remark: ${remark.trim()}`,
+				taskId,
+				authorId: userId,
 			},
 		});
 
-		res.status(200).json(updated);
+		res.status(200).json(comment);
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
@@ -346,50 +332,5 @@ export const addSseInchargeRemark = async (req, res) => {
  * This should be called by a scheduler/cron (e.g., every 30 minutes)
  */
 export const escalateOverdueFailures = async (req, res) => {
-	const now = new Date();
-
-	try {
-		const overdueFailures = await prisma.failure.findMany({
-			where: {
-				slaDueAt: { lte: now },
-				task: { status: { notIn: ["CLOSED", "RESOLVED"] } },
-				escalationLevel: { lt: ESCALATION_MAX_LEVEL },
-			},
-			include: { task: true },
-		});
-
-		const updates = await prisma.$transaction(
-			overdueFailures.map((failure) => {
-				const nextLevel = failure.escalationLevel + 1;
-				const shouldBreach = !failure.slaBreachedAt;
-				return prisma.failure.update({
-					where: { id: failure.id },
-					data: {
-						escalationLevel: nextLevel,
-						lastEscalatedAt: now,
-						slaBreachedAt: shouldBreach ? now : undefined,
-					},
-				});
-			}),
-		);
-
-		await prisma.$transaction(
-			overdueFailures.map((failure) =>
-				prisma.taskEscalationLog.create({
-					data: {
-						taskId: failure.taskId,
-						fromLevel: failure.escalationLevel,
-						toLevel: failure.escalationLevel + 1,
-						reason: `SLA breach escalation after ${ESCALATION_INTERVAL_HOURS}h interval`,
-					},
-				}),
-			),
-		);
-
-		res.status(200).json({
-			escalated: updates.length,
-		});
-	} catch (error) {
-		res.status(500).json({ error: error.message });
-	}
+	return res.status(501).json({ message: "SLA escalation is not enabled in current schema." });
 };

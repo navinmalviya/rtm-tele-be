@@ -125,6 +125,33 @@ export const findEquipmentByStation = async (req, res) => {
 };
 
 /**
+ * 2.1 FIND ALL EQUIPMENT (Filtered by Division)
+ */
+export const findAllEquipment = async (req, res) => {
+	try {
+		const { divisionId, role } = req.user;
+		const equipment = await prisma.equipment.findMany({
+			where:
+				role === "SUPER_ADMIN"
+					? {}
+					: {
+							station: {
+								divisionId,
+							},
+					  },
+			include: {
+				template: true,
+				station: { select: { name: true, code: true } },
+			},
+			orderBy: { createdAt: "desc" },
+		});
+		res.status(200).json(equipment);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+/**
  * 3. UPDATE EQUIPMENT (Universal)
  * Handles XYFlow positions, status changes, and metadata updates.
  */

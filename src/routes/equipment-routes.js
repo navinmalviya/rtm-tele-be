@@ -3,6 +3,7 @@ import {
 	bulkUpdateEquipment, // New: For efficient XYFlow saving and batch edits
 	createEquipment,
 	deleteEquipment,
+	findAllEquipment,
 	findEquipmentByStation,
 	updateEquipment, // Renamed from updateEquipmentPosition for universal use
 } from "../controllers/equipment-controller.js";
@@ -24,6 +25,12 @@ router.get(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.ASSET_READ),
 	findEquipmentByStation,
+);
+router.get(
+	"/all",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_READ),
+	findAllEquipment,
 );
 
 // 2. Universal Updates

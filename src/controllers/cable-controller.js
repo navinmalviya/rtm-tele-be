@@ -60,9 +60,27 @@ export const cableController = {
 					},
 					copperPairs: {
 						orderBy: [{ quadNo: "asc" }, { pairNo: "asc" }],
+						include: {
+							circuits: {
+								select: {
+									id: true,
+									circuitIdString: true,
+									equipments: { select: { id: true, name: true } },
+								},
+							},
+						},
 					},
 					fibers: {
 						orderBy: [{ tubeNo: "asc" }, { fiberNo: "asc" }],
+						include: {
+							circuits: {
+								select: {
+									id: true,
+									circuitIdString: true,
+									equipments: { select: { id: true, name: true } },
+								},
+							},
+						},
 					},
 					ecSockets: {
 						orderBy: { poleKm: "asc" },
@@ -130,6 +148,37 @@ export const cableController = {
 			});
 
 			res.status(201).json(socket);
+		} catch (error) {
+			res.status(500).json({ error: error.message });
+		}
+	},
+
+	connectMediaToEquipment: async (req, res) => {
+		try {
+			const { mediaType, mediaId, equipmentId, circuitIdString, description } = req.body;
+			if (!mediaType || !mediaId || !equipmentId) {
+				return res.status(400).json({ message: "mediaType, mediaId and equipmentId are required." });
+			}
+
+			const circuitCode =
+				circuitIdString || `CIR-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 10000)}`;
+
+			const circuit = await prisma.circuit.create({
+				data: {
+					circuitIdString: circuitCode,
+					description: description || null,
+					equipments: { connect: { id: equipmentId } },
+					copperPairs: mediaType === "PAIR" ? { connect: { id: mediaId } } : undefined,
+					fibers: mediaType === "FIBER" ? { connect: { id: mediaId } } : undefined,
+				},
+				include: {
+					equipments: { select: { id: true, name: true } },
+					copperPairs: { select: { id: true } },
+					fibers: { select: { id: true } },
+				},
+			});
+
+			res.status(201).json({ message: "Connected successfully", circuit });
 		} catch (error) {
 			res.status(500).json({ error: error.message });
 		}
