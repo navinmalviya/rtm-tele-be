@@ -1,9 +1,4 @@
 import prisma from "../lib/prisma";
-import {
-	computeSlaDueAt,
-	ESCALATION_INTERVAL_HOURS,
-	ESCALATION_MAX_LEVEL,
-} from "../lib/sla.js";
 
 const appendTaskHistory = async (db, { taskId, actorId, action, fromValue, toValue, details }) => {
 	return db.taskHistory.create({
@@ -16,6 +11,12 @@ const appendTaskHistory = async (db, { taskId, actorId, action, fromValue, toVal
 			details: details || null,
 		},
 	});
+};
+
+const parseBoolean = (value, fallback = undefined) => {
+	if (value === true || value === "true" || value === 1 || value === "1") return true;
+	if (value === false || value === "false" || value === 0 || value === "0") return false;
+	return fallback;
 };
 
 /**
@@ -61,7 +62,16 @@ export const createTask = async (req, res) => {
 	} = req.body;
 
 	const ownerId = req.user.id;
-	const failureReportedAt = new Date();
+
+	if (type === "FAILURE") {
+		if (!failureData?.failureInTime) {
+			return res.status(400).json({ message: "failureInTime is required for failure tasks." });
+		}
+		const parsedFailureInTime = new Date(failureData.failureInTime);
+		if (Number.isNaN(parsedFailureInTime.getTime())) {
+			return res.status(400).json({ message: "Invalid failureInTime value." });
+		}
+	}
 
 	try {
 		const result = await prisma.$transaction(async (tx) => {
@@ -99,21 +109,29 @@ export const createTask = async (req, res) => {
 
 			// 2. Create the Specialized Sub-entry
 			if (type === "FAILURE" && failureData) {
-				const slaDueAt = computeSlaDueAt(failureReportedAt, priority);
+				const parsedFailureInTime = new Date(failureData.failureInTime);
 				await tx.failure.create({
 					data: {
-						...failureData,
-						failureReportedAt,
-						slaDueAt,
-						escalationLevel: 1,
 						taskId: task.id,
+						type: failureData.type || null,
+						cause: failureData.cause || null,
+						locationId: failureData.locationId || null,
+						stationId: failureData.stationId || null,
+						cableCutId: failureData.cableCutId || null,
+						failureInTime: parsedFailureInTime,
+						isHqRepeated: parseBoolean(failureData.isHqRepeated, false),
+						isIcmsRepeated: parseBoolean(failureData.isIcmsRepeated, false),
+						restorationTime: failureData.restorationTime
+							? new Date(failureData.restorationTime)
+							: null,
+						remarks: failureData.remarks || null,
 					},
 				});
 				await appendTaskHistory(tx, {
 					taskId: task.id,
 					actorId: ownerId,
 					action: "FAILURE_DETAILS_CREATED",
-					details: "Failure details initialized",
+					details: "Failure details initialized by testroom",
 				});
 			} else if (type === "MAINTENANCE" && maintenanceData) {
 				await tx.maintenance.create({
@@ -235,7 +253,7 @@ export const getTasks = async (req, res) => {
 				owner: { select: { name: true, username: true } },
 				assignedTo: { select: { name: true, username: true } },
 				failure: {
-					include: { location: true, subsection: true, cableCut: true },
+					include: { location: true, cableCut: true },
 				},
 				maintenance: { include: { location: true, equipment: true } },
 				trcRequest: { include: { equipment: true } },
@@ -263,7 +281,7 @@ export const getTaskById = async (req, res) => {
 				owner: { select: { name: true, username: true } },
 				assignedTo: { select: { name: true, username: true } },
 				failure: {
-					include: { location: true, subsection: true, cableCut: true, station: true },
+					include: { location: true, cableCut: true, station: true },
 				},
 				maintenance: { include: { location: true, equipment: true } },
 				trcRequest: { include: { equipment: true } },
@@ -312,14 +330,28 @@ export const upsertFailureForTask = async (req, res) => {
 		}
 
 		const cleanedFailureData = {
-			type: failureData.type,
-			cause: failureData.cause,
-			locationId: failureData.locationId || null,
-			subsectionId: failureData.subsectionId || null,
-			stationId: failureData.stationId || null,
-			restorationTime: failureData.restorationTime || null,
-			remarks: failureData.remarks || null,
-			cableCutId: failureData.cableCutId || null,
+			type: failureData.type ?? undefined,
+			cause: failureData.cause ?? undefined,
+			locationId: failureData.locationId !== undefined ? (failureData.locationId || null) : undefined,
+			stationId: failureData.stationId !== undefined ? (failureData.stationId || null) : undefined,
+			restorationTime:
+				failureData.restorationTime !== undefined
+					? failureData.restorationTime
+						? new Date(failureData.restorationTime)
+						: null
+					: undefined,
+			remarks: failureData.remarks !== undefined ? (failureData.remarks || null) : undefined,
+			cableCutId: failureData.cableCutId !== undefined ? (failureData.cableCutId || null) : undefined,
+			failureInTime:
+				failureData.failureInTime !== undefined
+					? failureData.failureInTime
+						? new Date(failureData.failureInTime)
+						: null
+					: undefined,
+			isHqRepeated:
+				parseBoolean(failureData.isHqRepeated, undefined),
+			isIcmsRepeated:
+				parseBoolean(failureData.isIcmsRepeated, undefined),
 		};
 
 		let failure;
@@ -337,14 +369,16 @@ export const upsertFailureForTask = async (req, res) => {
 				"cause",
 				"stationId",
 				"locationId",
-				"subsectionId",
+				"failureInTime",
+				"isHqRepeated",
+				"isIcmsRepeated",
 				"restorationTime",
 				"remarks",
 				"cableCutId",
 			];
 
 			const changedFields = trackedFields.filter(
-				(key) => (before[key] || null) !== (failure[key] || null)
+				(key) => (before[key] ?? null) !== (failure[key] ?? null)
 			);
 
 			await appendTaskHistory(prisma, {
@@ -361,6 +395,14 @@ export const upsertFailureForTask = async (req, res) => {
 				data: {
 					...cleanedFailureData,
 					taskId,
+					isHqRepeated:
+						typeof cleanedFailureData.isHqRepeated === "boolean"
+							? cleanedFailureData.isHqRepeated
+							: false,
+					isIcmsRepeated:
+						typeof cleanedFailureData.isIcmsRepeated === "boolean"
+							? cleanedFailureData.isIcmsRepeated
+							: false,
 				},
 			});
 

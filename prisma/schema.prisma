@@ -166,17 +166,22 @@ enum RackType {
 
 enum FailureType {
   AXLE_COUTER
+  DATA_LOGGER
+  VHF
+  GPS_CLOCK
   BLOCK
   SECTION_CONTROL
   TPC_CONTROL
   SI_CONTROL
-  PRS
+  UTN
   FOIS
   AUTO_PHONE
   RAILNET
   CMS_SERVER
   CGDB_BOARD
   PA_SYSTEM
+  FARE_TERMINAL
+  FCT_STD_PHONE
   MISC
 }
 
@@ -266,8 +271,6 @@ model Subsection {
 
   // Implicit Many-to-Many: A subsection has many stations
   //   stations      Station[] 
-  failures Failure[]
-
   cables      Cable[]
   socketTests SocketTestingReport[]
 }
@@ -649,14 +652,12 @@ model Failure {
   taskId String @unique
   task   Task   @relation(fields: [taskId], references: [id])
 
-  type  FailureType
-  cause CauseOfFailure
+  type  FailureType?
+  cause CauseOfFailure?
 
   // Geographic Context
   locationId   String?
   location     Location?   @relation(fields: [locationId], references: [id])
-  subsectionId String?
-  subsection   Subsection? @relation(fields: [subsectionId], references: [id])
 
   stationId String? // Add this back if you want direct Station access
   station   Station? @relation(fields: [stationId], references: [id])
@@ -665,6 +666,9 @@ model Failure {
   cableCutId String?   @unique
   cableCut   CableCut? @relation(fields: [cableCutId], references: [id])
 
+  failureInTime  DateTime?
+  isHqRepeated   Boolean   @default(false)
+  isIcmsRepeated Boolean   @default(false)
   restorationTime DateTime?
   remarks         String?
 }
