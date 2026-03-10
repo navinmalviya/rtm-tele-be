@@ -2,19 +2,36 @@ import prisma from "../lib/prisma";
 
 // 1. CREATE Station (Auto-attach Division)
 const createStation = async (req, res) => {
-	const { code, name, mapX, mapY } = req.body;
+	const { code, name, mapX, mapY, supervisorId } = req.body;
 
 	// Values extracted from the Token via the Middleware
 	const userId = req.user.id;
 	const divisionId = req.user.divisionId;
 
+	if (!supervisorId) {
+		return res.status(400).json({ message: "Supervisor is required." });
+	}
+
 	try {
+		const supervisor = await prisma.user.findFirst({
+			where: {
+				id: supervisorId,
+				divisionId: req.user.role === "SUPER_ADMIN" ? undefined : divisionId,
+			},
+			select: { id: true },
+		});
+
+		if (!supervisor) {
+			return res.status(400).json({ message: "Invalid supervisor for this division." });
+		}
+
 		const station = await prisma.station.create({
 			data: {
 				code,
 				name,
 				divisionId,
 				createdById: userId,
+				supervisorId,
 				mapX: parseFloat(mapX || 0),
 				mapY: parseFloat(mapY || 0),
 			},
@@ -35,6 +52,9 @@ const findAllStations = async (req, res) => {
 			include: {
 				createdBy: {
 					select: { name: true },
+				},
+				supervisor: {
+					select: { id: true, name: true, designation: true },
 				},
 				// FIX: Changed from 'subsection' to 'subsections' to match schema back-relations
 				subsections: true,
@@ -79,10 +99,25 @@ const updateStation = async (req, res) => {
 				.json({ message: "Unauthorized to update this division's data" });
 		}
 
+		if (data.supervisorId !== undefined) {
+			const supervisor = await prisma.user.findFirst({
+				where: {
+					id: data.supervisorId,
+					divisionId: role === "SUPER_ADMIN" ? undefined : divisionId,
+				},
+				select: { id: true },
+			});
+			if (!supervisor) {
+				return res.status(400).json({ message: "Invalid supervisor for this division." });
+			}
+		}
+
 		const updatedStation = await prisma.station.update({
 			where: { id },
 			data: {
 				...data,
+				supervisorId:
+					data.supervisorId !== undefined ? data.supervisorId : undefined,
 				mapX: data.mapX !== undefined ? parseFloat(data.mapX) : undefined,
 				mapY: data.mapY !== undefined ? parseFloat(data.mapY) : undefined,
 			},
@@ -100,6 +135,9 @@ const deleteStation = async (req, res) => {
 
 	try {
 		const station = await prisma.station.findUnique({ where: { id } });
+		if (!station) {
+			return res.status(404).json({ message: "Station not found" });
+		}
 
 		if (role !== "SUPER_ADMIN" && station.divisionId !== divisionId) {
 			return res.status(403).json({ message: "Forbidden" });
@@ -108,6 +146,12 @@ const deleteStation = async (req, res) => {
 		await prisma.station.delete({ where: { id } });
 		res.status(200).json({ message: "Station deleted successfully!" });
 	} catch (error) {
+		if (error.code === "P2003") {
+			return res.status(400).json({
+				message:
+					"Cannot delete station with linked locations, racks, equipment, or subsections.",
+			});
+		}
 		res.status(500).json({ error: error.message });
 	}
 };
@@ -158,6 +202,7 @@ const getStationInternalTopology = async (req, res) => {
 				id: true,
 				name: true,
 				code: true,
+				supervisor: { select: { id: true, name: true, designation: true } },
 				// FIX: Changed 'subsection' to 'subsections' to match your schema
 				subsections: {
 					select: {
@@ -221,6 +266,7 @@ const getStationSummary = async (req, res) => {
 			select: {
 				name: true,
 				code: true,
+				supervisor: { select: { id: true, name: true, designation: true } },
 				subsections: { select: { name: true } },
 				_count: {
 					select: {

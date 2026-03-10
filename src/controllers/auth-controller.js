@@ -3,8 +3,18 @@ import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
 
 const create = async (req, res) => {
-	const { email, name, designation, password, role, username, divisionId } =
+	const {
+		email,
+		name,
+		designation,
+		password,
+		role,
+		username,
+		divisionId,
+		inchargeId,
+	} =
 		req.body;
+	const isAdminRole = role === "SUPER_ADMIN" || role === "ADMIN";
 
 	// Basic validation
 	if (!email || !name || !password || !username || !divisionId) {
@@ -15,6 +25,24 @@ const create = async (req, res) => {
 	}
 
 	try {
+		if (!isAdminRole) {
+			if (!inchargeId) {
+				return res
+					.status(400)
+					.json({ message: "reporting_to is required for non-admin roles." });
+			}
+
+			const reportingOfficer = await prisma.user.findFirst({
+				where: { id: inchargeId, divisionId },
+				select: { id: true },
+			});
+			if (!reportingOfficer) {
+				return res
+					.status(400)
+					.json({ message: "Invalid reporting_to user for this division." });
+			}
+		}
+
 		const user = await prisma.user.create({
 			data: {
 				name,
@@ -24,6 +52,7 @@ const create = async (req, res) => {
 				designation,
 				role,
 				divisionId, // Now linking user to their Railway Division
+				inchargeId: isAdminRole ? null : inchargeId,
 			},
 		});
 
@@ -58,11 +87,14 @@ const signin = async (req, res) => {
 		});
 
 		// ... (keep your password validation logic)
+		const effectiveRole =
+			user.role === "JE_SSE_TELE_SECTIONAL" ? "FIELD_ENGINEER" : user.role;
 
 		const token = jwt.sign(
 			{
 				id: user.id,
-				role: user.role,
+				role: effectiveRole,
+				originalRole: user.role,
 				username: user.username,
 				divisionId: user.divisionId, // This is the UUID string from the User table
 			},
@@ -71,13 +103,14 @@ const signin = async (req, res) => {
 		);
 
 		return res.status(200).json({
-			user: {
-				id: user.id,
-				username: user.username,
-				fullName: user.name,
-				role: user.role,
-				// Accessing the ID directly from the user record
-				divisionId: user.divisionId,
+				user: {
+					id: user.id,
+					username: user.username,
+					fullName: user.name,
+					role: effectiveRole,
+					originalRole: user.role,
+					// Accessing the ID directly from the user record
+					divisionId: user.divisionId,
 				// Accessing the code from the nested 'division' object fetched via 'include'
 				divisionCode: user.division?.code || "N/A",
 				divisionName: user.division?.name || "N/A",

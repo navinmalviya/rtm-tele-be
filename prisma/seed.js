@@ -6,29 +6,59 @@ async function main() {
 	const commonPassword = await bcrypt.hash("railway123", 10);
 
 	// 1. ZONAL HIERARCHY
-	const wr = await prisma.zone.create({
-		data: { name: "Western Railway", code: "WR" },
+	const wr = await prisma.zone.upsert({
+		where: { code: "WR" },
+		update: { name: "Western Railway" },
+		create: { name: "Western Railway", code: "WR" },
 	});
 
-	const rtmDiv = await prisma.division.create({
-		data: { name: "Ratlam", code: "RTM", zoneId: wr.id },
+	const existingRtmDiv = await prisma.division.findFirst({
+		where: { code: "RTM", zoneId: wr.id },
 	});
+	const rtmDiv =
+		existingRtmDiv ||
+		(await prisma.division.create({
+			data: { name: "Ratlam", code: "RTM", zoneId: wr.id },
+		}));
 
-	const brcDiv = await prisma.division.create({
-		data: { name: "Baroda", code: "BRC", zoneId: wr.id },
+	const existingBrcDiv = await prisma.division.findFirst({
+		where: { code: "BRC", zoneId: wr.id },
 	});
+	const brcDiv =
+		existingBrcDiv ||
+		(await prisma.division.create({
+			data: { name: "Baroda", code: "BRC", zoneId: wr.id },
+		}));
 
-	const section = await prisma.section.create({
-		data: {
-			name: "Ratlam-Godhra Section",
+	const existingSection = await prisma.section.findFirst({
+		where: {
 			code: "RTM-GDA",
 			divisionId: rtmDiv.id,
 		},
 	});
+	const section =
+		existingSection ||
+		(await prisma.section.create({
+			data: {
+				name: "Ratlam-Godhra Section",
+				code: "RTM-GDA",
+				divisionId: rtmDiv.id,
+			},
+		}));
+	void section;
 
 	// 2. CREATE SYSTEM ADMIN (Required for audit/createdById fields)
-	const admin = await prisma.user.create({
-		data: {
+	const admin = await prisma.user.upsert({
+		where: { username: "superadmin" },
+		update: {
+			name: "Navin Malviya",
+			email: "navinmalviya33@gmail.com",
+			password: commonPassword,
+			role: "SUPER_ADMIN",
+			designation: "SSE/Railnet/RTM",
+			divisionId: rtmDiv.id,
+		},
+		create: {
 			name: "Navin Malviya",
 			username: "superadmin",
 			email: "navinmalviya33@gmail.com",
@@ -41,36 +71,69 @@ async function main() {
 
 	// 3. CREATE STATIONS (Nodes)
 	// These must exist before we can link them via Subsections
-	const stnRtm = await prisma.station.create({
-		data: {
+	const stnRtm = await prisma.station.upsert({
+		where: { code: "RTM" },
+		update: {
+			name: "Ratlam",
+			division: { connect: { id: rtmDiv.id } },
+			createdBy: { connect: { id: admin.id } },
+			supervisor: { connect: { id: admin.id } },
+			mapX: 0,
+			mapY: 200,
+		},
+		create: {
 			name: "Ratlam",
 			code: "RTM",
-			divisionId: rtmDiv.id,
-			createdById: admin.id,
+			division: { connect: { id: rtmDiv.id } },
+			createdBy: { connect: { id: admin.id } },
+			supervisor: { connect: { id: admin.id } },
 			mapX: 0,
 			mapY: 200,
 		},
 	});
-	const stnMrn = await prisma.station.create({
-		data: {
+	const stnMrn = await prisma.station.upsert({
+		where: { code: "MRN" },
+		update: {
+			name: "Morwani",
+			division: { connect: { id: rtmDiv.id } },
+			createdBy: { connect: { id: admin.id } },
+			supervisor: { connect: { id: admin.id } },
+			mapX: 400,
+			mapY: 200,
+		},
+		create: {
 			name: "Morwani",
 			code: "MRN",
-			divisionId: rtmDiv.id,
-			createdById: admin.id,
+			division: { connect: { id: rtmDiv.id } },
+			createdBy: { connect: { id: admin.id } },
+			supervisor: { connect: { id: admin.id } },
 			mapX: 400,
 			mapY: 200,
 		},
 	});
-	const stnBild = await prisma.station.create({
-		data: {
+	const stnBild = await prisma.station.upsert({
+		where: { code: "BILD" },
+		update: {
+			name: "Bildi",
+			division: { connect: { id: rtmDiv.id } },
+			createdBy: { connect: { id: admin.id } },
+			supervisor: { connect: { id: admin.id } },
+			mapX: 800,
+			mapY: 200,
+		},
+		create: {
 			name: "Bildi",
 			code: "BILD",
-			divisionId: rtmDiv.id,
-			createdById: admin.id,
+			division: { connect: { id: rtmDiv.id } },
+			createdBy: { connect: { id: admin.id } },
+			supervisor: { connect: { id: admin.id } },
 			mapX: 800,
 			mapY: 200,
 		},
 	});
+	void stnRtm;
+	void stnMrn;
+	void stnBild;
 
 	// 4. CREATE SUBSECTIONS (The Block Sections / Edges)
 	// This explicitly creates the links you requested
@@ -98,67 +161,42 @@ async function main() {
 
 	// console.log(`Created Subsections: ${sub1.code} and ${sub2.code}`);
 
-	// 5. CREATE ALL USER TYPES
+	// 5. CREATE ONLY REQUIRED USER TYPES
 	const users = [
+		{
+			username: "admin_rtm",
+			role: "ADMIN",
+			name: "Division Admin RTM",
+			divId: rtmDiv.id,
+			designation: "Admin",
+		},
 		{
 			username: "testroom_rtm",
 			role: "TESTROOM",
 			name: "RTM Testroom Control",
 			divId: rtmDiv.id,
-		},
-		{
-			username: "sse_rtm",
-			role: "SSE_INCHARGE",
-			name: "SSE S&T Ratlam",
-			divId: rtmDiv.id,
-		},
-		{
-			username: "fe_rtm",
-			role: "FIELD_ENGINEER",
-			name: "Field Engineer RTM",
-			divId: rtmDiv.id,
-		},
-		{
-			username: "trc_rtm",
-			role: "TRC",
-			name: "Repair Center RTM",
-			divId: rtmDiv.id,
-		},
-		{
-			username: "tech_rtm",
-			role: "SSE_TECH",
-			name: "Technical SSE Ratlam",
-			divId: rtmDiv.id,
-		},
-		{
-			username: "maintainer_rtm",
-			role: "MAINTAINER",
-			name: "Maintainer Grade-I",
-			divId: rtmDiv.id,
-		},
-		{
-			username: "viewer_brc",
-			role: "VIEWER",
-			name: "Baroda Divisional Viewer",
-			divId: brcDiv.id,
-		},
-		{
-			username: "viewer_rtm",
-			role: "VIEWER",
-			name: "Ratlam Divisional Viewer",
-			divId: rtmDiv.id,
+			designation: "Testroom",
 		},
 	];
 
 	for (const u of users) {
-		await prisma.user.create({
-			data: {
+		await prisma.user.upsert({
+			where: { username: u.username },
+			update: {
+				name: u.name,
+				email: `${u.username}@railway.gov.in`,
+				password: commonPassword,
+				role: u.role,
+				designation: u.designation || u.role.replace("_", " "),
+				divisionId: u.divId,
+			},
+			create: {
 				name: u.name,
 				username: u.username,
 				email: `${u.username}@railway.gov.in`,
 				password: commonPassword,
 				role: u.role,
-				designation: u.role.replace("_", " "),
+				designation: u.designation || u.role.replace("_", " "),
 				divisionId: u.divId,
 			},
 		});

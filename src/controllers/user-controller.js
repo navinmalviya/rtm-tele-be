@@ -17,7 +17,16 @@ const getAllUsers = async (req, res) => {
 				email: true,
 				designation: true,
 				role: true,
+				inchargeId: true,
 				divisionId: true,
+				incharge: {
+					select: {
+						id: true,
+						name: true,
+						designation: true,
+						role: true,
+					},
+				},
 				// Sensitive data like passwords must be excluded here
 			},
 			orderBy: {
@@ -29,6 +38,9 @@ const getAllUsers = async (req, res) => {
 		if (role !== "SUPER_ADMIN") {
 			queryOptions.where.divisionId = divisionId;
 		}
+
+		// Never return SUPER_ADMIN entries in the list for settings views
+		queryOptions.where.role = { not: "SUPER_ADMIN" };
 
 		const users = await prisma.user.findMany(queryOptions);
 

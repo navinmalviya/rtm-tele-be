@@ -2,6 +2,25 @@ import prisma from "../lib/prisma.js";
 import { addFrequency, normalizeRemindBeforeDays } from "../lib/maintenance.js";
 import { runMaintenanceRemindersJob } from "../lib/maintenance-runner.js";
 
+const SUPERVISOR_ROLES = new Set([
+	"JE_SSE_TELE_SECTIONAL",
+	"JE_SECTIONAL",
+	"SSE_SECTIONAL",
+	"FIELD_ENGINEER",
+]);
+
+const assertValidSupervisor = async (supervisorId, divisionId) => {
+	const supervisor = await prisma.user.findFirst({
+		where: {
+			id: supervisorId,
+			divisionId,
+			role: { in: Array.from(SUPERVISOR_ROLES) },
+		},
+		select: { id: true },
+	});
+	return Boolean(supervisor);
+};
+
 export const createMaintenanceSchedule = async (req, res) => {
 	const {
 		title,
@@ -12,27 +31,49 @@ export const createMaintenanceSchedule = async (req, res) => {
 		stationId,
 		equipmentId,
 		locationId,
+		supervisorId,
 	} = req.body;
 
 	const createdById = req.user.id;
+	const divisionId = req.user.divisionId;
 
-	if (!title || !stationId || !nextDueDate) {
-		return res.status(400).json({ message: "title, stationId, nextDueDate are required" });
+	if (!title || !stationId || !nextDueDate || !supervisorId) {
+		return res.status(400).json({ message: "title, stationId, nextDueDate and supervisorId are required" });
 	}
 
 	try {
-		const schedule = await prisma.maintenanceSchedule.create({
-			data: {
-				title,
-				description: description || null,
-				frequency: frequency || "MONTHLY",
-				nextDueDate: new Date(nextDueDate),
-				remindBeforeDays: normalizeRemindBeforeDays(remindBeforeDays),
-				station: { connect: { id: stationId } },
-				equipment: equipmentId ? { connect: { id: equipmentId } } : undefined,
-				location: locationId ? { connect: { id: locationId } } : undefined,
-				createdBy: { connect: { id: createdById } },
-			},
+		const validSupervisor = await assertValidSupervisor(supervisorId, divisionId);
+		if (!validSupervisor) {
+			return res.status(400).json({ message: "Supervisor must be a JE/SSE of your division." });
+		}
+
+		const dueDate = new Date(nextDueDate);
+
+		const schedule = await prisma.$transaction(async (tx) => {
+			const created = await tx.maintenanceSchedule.create({
+				data: {
+					title,
+					description: description || null,
+					frequency: frequency || "MONTHLY",
+					nextDueDate: dueDate,
+					remindBeforeDays: normalizeRemindBeforeDays(remindBeforeDays),
+					station: { connect: { id: stationId } },
+					equipment: equipmentId ? { connect: { id: equipmentId } } : undefined,
+					location: locationId ? { connect: { id: locationId } } : undefined,
+					createdBy: { connect: { id: createdById } },
+					supervisor: { connect: { id: supervisorId } },
+				},
+			});
+
+			await tx.maintenanceOccurrence.create({
+				data: {
+					scheduleId: created.id,
+					dueDate,
+					status: "OPEN",
+				},
+			});
+
+			return created;
 		});
 
 		res.status(201).json(schedule);
@@ -42,13 +83,21 @@ export const createMaintenanceSchedule = async (req, res) => {
 };
 
 export const listMaintenanceSchedules = async (req, res) => {
+	const { mine } = req.query;
+	const { id: userId } = req.user;
 	try {
 		const schedules = await prisma.maintenanceSchedule.findMany({
+			where: mine === "true" ? { supervisorId: userId } : undefined,
 			include: {
 				station: { select: { id: true, name: true, code: true } },
 				equipment: { select: { id: true, name: true } },
 				location: { select: { id: true, name: true } },
 				createdBy: { select: { id: true, name: true } },
+				supervisor: { select: { id: true, name: true, role: true, designation: true } },
+				occurrences: {
+					select: { id: true, status: true, dueDate: true, completedAt: true, completedById: true },
+					orderBy: { createdAt: "desc" },
+				},
 			},
 			orderBy: { nextDueDate: "asc" },
 		});
@@ -70,9 +119,17 @@ export const updateMaintenanceSchedule = async (req, res) => {
 		equipmentId,
 		locationId,
 		status,
+		supervisorId,
 	} = req.body;
 
 	try {
+		if (supervisorId !== undefined) {
+			const validSupervisor = await assertValidSupervisor(supervisorId, req.user.divisionId);
+			if (!validSupervisor) {
+				return res.status(400).json({ message: "Supervisor must be a JE/SSE of your division." });
+			}
+		}
+
 		const updated = await prisma.maintenanceSchedule.update({
 			where: { id },
 			data: {
@@ -85,6 +142,7 @@ export const updateMaintenanceSchedule = async (req, res) => {
 				station: stationId ? { connect: { id: stationId } } : undefined,
 				equipment: equipmentId ? { connect: { id: equipmentId } } : undefined,
 				location: locationId ? { connect: { id: locationId } } : undefined,
+				supervisor: supervisorId ? { connect: { id: supervisorId } } : undefined,
 			},
 		});
 
@@ -169,10 +227,70 @@ export const markMaintenanceCompleted = async (req, res) => {
 				data: { nextDueDate: nextDue },
 			});
 
+			await tx.maintenanceOccurrence.create({
+				data: {
+					scheduleId: occurrence.scheduleId,
+					dueDate: nextDue,
+					status: "OPEN",
+				},
+			});
+
 			return completed;
 		});
 
 		res.status(200).json(updated);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+export const myMaintenanceSummary = async (req, res) => {
+	const userId = req.user.id;
+	try {
+		const [pending, completed] = await Promise.all([
+			prisma.maintenanceOccurrence.findMany({
+				where: {
+					status: { in: ["OPEN", "OVERDUE"] },
+					schedule: { supervisorId: userId, status: "ACTIVE" },
+				},
+				include: {
+					schedule: {
+						include: {
+							station: { select: { id: true, name: true, code: true } },
+							location: { select: { id: true, name: true } },
+							equipment: { select: { id: true, name: true } },
+						},
+					},
+				},
+				orderBy: { dueDate: "asc" },
+				take: 100,
+			}),
+			prisma.maintenanceOccurrence.findMany({
+				where: {
+					status: "COMPLETED",
+					schedule: { supervisorId: userId },
+				},
+				include: {
+					schedule: {
+						include: {
+							station: { select: { id: true, name: true, code: true } },
+							location: { select: { id: true, name: true } },
+							equipment: { select: { id: true, name: true } },
+						},
+					},
+					completedBy: { select: { id: true, name: true } },
+				},
+				orderBy: { completedAt: "desc" },
+				take: 100,
+			}),
+		]);
+
+		res.status(200).json({
+			pendingCount: pending.length,
+			completedCount: completed.length,
+			pending,
+			completed,
+		});
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}

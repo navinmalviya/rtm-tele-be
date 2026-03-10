@@ -2,9 +2,11 @@ import Router from "express";
 import {
 	bulkUpdateStations,
 	createStation,
+	deleteStation,
 	findAllStations,
 	getStationInternalTopology,
 	getStationSummary,
+	updateStation,
 } from "../controllers/station-controller.js";
 import { verifyToken } from "../middlewares/verifiyToken.js";
 import { allowRoles } from "../middlewares/allowRoles.js";
@@ -29,6 +31,18 @@ router.post(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.ASSET_WRITE),
 	bulkUpdateStations,
+);
+router.patch(
+	"/update/:id",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	updateStation,
+);
+router.delete(
+	"/delete/:id",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	deleteStation,
 );
 router.get(
 	"/:id",

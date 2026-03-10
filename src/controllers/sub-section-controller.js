@@ -2,10 +2,14 @@ import prisma from "../lib/prisma";
 
 // 1. CREATE Sub-section (Connects two stations)
 const createSubSection = async (req, res) => {
-	const { code, name, fromStationId, toStationId, startKm, endKm } = req.body;
+	const { code, name, fromStationId, toStationId, startKm, endKm, supervisorId } = req.body;
 
 	const userId = req.user.id;
 	const divisionId = req.user.divisionId;
+
+	if (!supervisorId) {
+		return res.status(400).json({ message: "Supervisor is required." });
+	}
 
 	try {
 		// Validation: Ensure both stations belong to the user's division
@@ -21,6 +25,18 @@ const createSubSection = async (req, res) => {
 				message:
 					"One or both stations not found or unauthorized for this division.",
 			});
+		}
+
+		const supervisor = await prisma.user.findFirst({
+			where: {
+				id: supervisorId,
+				divisionId: req.user.role === "SUPER_ADMIN" ? undefined : divisionId,
+			},
+			select: { id: true },
+		});
+
+		if (!supervisor) {
+			return res.status(400).json({ message: "Invalid supervisor for this division." });
 		}
 
 		const parsedStart = startKm !== undefined && startKm !== "" ? Number.parseFloat(startKm) : null;
@@ -46,10 +62,12 @@ const createSubSection = async (req, res) => {
 				endKm: parsedEnd,
 				divisionId,
 				createdById: userId,
+				supervisorId,
 			},
 			include: {
 				fromStation: { select: { name: true, code: true } },
 				toStation: { select: { name: true, code: true } },
+				supervisor: { select: { id: true, name: true, designation: true } },
 			},
 		});
 
@@ -70,6 +88,7 @@ const findAllSubSections = async (req, res) => {
 				fromStation: { select: { name: true, code: true } },
 				toStation: { select: { name: true, code: true } },
 				createdBy: { select: { name: true } },
+				supervisor: { select: { id: true, name: true, designation: true } },
 				section: { select: { name: true, code: true } }, // If linked to a main section
 			},
 		};
@@ -95,6 +114,19 @@ const updateSubSection = async (req, res) => {
 
 		if (role !== "SUPER_ADMIN" && existing.divisionId !== divisionId) {
 			return res.status(403).json({ message: "Unauthorized access" });
+		}
+
+		if (data.supervisorId !== undefined) {
+			const supervisor = await prisma.user.findFirst({
+				where: {
+					id: data.supervisorId,
+					divisionId: role === "SUPER_ADMIN" ? undefined : divisionId,
+				},
+				select: { id: true },
+			});
+			if (!supervisor) {
+				return res.status(400).json({ message: "Invalid supervisor for this division." });
+			}
 		}
 
 		const updated = await prisma.subsection.update({
@@ -147,6 +179,7 @@ const getSubSectionDetails = async (req, res) => {
 			include: {
 				fromStation: true,
 				toStation: true,
+				supervisor: { select: { id: true, name: true, designation: true } },
 				section: { select: { name: true, code: true } },
 			},
 		});

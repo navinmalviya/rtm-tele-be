@@ -14,74 +14,87 @@ datasource db {
 
 enum UserRole {
   SUPER_ADMIN
+  ADMIN
   TESTROOM
-  FIELD_ENGINEER
-  SSE_INCHARGE
+  SSE_TELE_INCHARGE
+  JE_SSE_TELE_SECTIONAL
+  TECHNICIAN
   TRC
   VIEWER
-  SSE_ST_OFFICE
+  SSE_SNT_OFFICE
   SSE_TECH
-  MAINTAINER
 }
 
 enum TrackSide {
-	UP
-	DOWN
+  UP
+  DOWN
 }
 
 enum EquipmentCategory {
-	NETWORKING
-	POWER
-	TRANSMISSION
-	SIGNALLING        // Added for FR-1.1 & Railway Specifics
-	PASSENGER_AMENITIES // Added for FR-2.a
-	SECURITY          // Added for FR-2.b (CCTV)
-	COMPUTING
-	SENSORS
-	PASSIVE
+  NETWORKING
+  POWER
+  TRANSMISSION
+  SIGNALLING // Added for FR-1.1 & Railway Specifics
+  PASSENGER_AMENITIES // Added for FR-2.a
+  SECURITY // Added for FR-2.b (CCTV)
+  COMPUTING
+  SENSORS
+  PASSIVE
+}
+
+enum TnpType {
+  FURNITURE
+  TOOLS
+  METERS
+  ELECTRICAL
+  ELECTRONICS
+  CUTLARY
+  SAFETY
+  RACKS
+  LINEN
 }
 
 enum EquipmentSubCategory {
-	// Networking
-	L2_SWITCH
-	L3_SWITCH
-	ROUTER
-	WIFI_ROUTER
-	ACCESS_POINT
-	FIREWALL
+  // Networking
+  L2_SWITCH
+  L3_SWITCH
+  ROUTER
+  WIFI_ROUTER
+  ACCESS_POINT
+  FIREWALL
 
-	// Power
-	BATTERY_SET
-	UPS
-	CHARGER
-	SOLAR_CONTROLLER
-	SMR               // Switch Mode Rectifier
+  // Power
+  BATTERY_SET
+  UPS
+  CHARGER
+  SOLAR_CONTROLLER
+  SMR // Switch Mode Rectifier
 
-	// Transmission
-	STM_NODE
-	PD_MUX
-	MEDIA_CONVERTER
-	MRO_MUX           // Managed Reachability Options
+  // Transmission
+  STM_NODE
+  PD_MUX
+  MEDIA_CONVERTER
+  MRO_MUX // Managed Reachability Options
 
-	// Signalling (New)
-	BPAC
-	BLOCK_INSTRUMENT
-	UFSBI
-	HASSDAC
-	KAVACH_UNIT       // Added for FR-3
+  // Signalling (New)
+  BPAC
+  BLOCK_INSTRUMENT
+  UFSBI
+  HASSDAC
+  KAVACH_UNIT // Added for FR-3
 
-	// Passenger Amenities & Security (New)
-	PA_SYSTEM         // Public Address
-	PIDS_BOARD        // Passenger Info Display
-	CCTV_CAMERA
-	NVR_VMS           // Network Video Recorder
+  // Passenger Amenities & Security (New)
+  PA_SYSTEM // Public Address
+  PIDS_BOARD // Passenger Info Display
+  CCTV_CAMERA
+  NVR_VMS // Network Video Recorder
 
-	// Computing & Passive
-	SERVER
-	WORKSTATION
-	LIU
-	PATCH_PANEL
-	CT_BOX            // Cable Termination Box
+  // Computing & Passive
+  SERVER
+  WORKSTATION
+  LIU
+  PATCH_PANEL
+  CT_BOX // Cable Termination Box
 }
 
 enum PortCategory {
@@ -128,61 +141,72 @@ enum Frequency {
   YEARLY
 }
 
+enum MaintenanceScheduleStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum MaintenanceOccurrenceStatus {
+  OPEN
+  OVERDUE
+  COMPLETED
+}
+
 enum NetworkMode {
   ACCESS
   TRUNK
 }
 
 enum RackType {
-    WALL_MOUNTED
-    FLOOR_STANDING
-    OUTDOOR_CABINET
-    BATTERY_STAND
+  WALL_MOUNTED
+  FLOOR_STANDING
+  OUTDOOR_CABINET
+  BATTERY_STAND
 }
 
 enum FailureType {
-    AXLE_COUTER
-    BLOCK
-    SECTION_CONTROL
-    TPC_CONTROL
-    SI_CONTROL
-    PRS
-    FOIS
-    AUTO_PHONE
-    RAILNET
-    CMS_SERVER
-    CGDB_BOARD
-    PA_SYSTEM
-    MISC
+  AXLE_COUTER
+  BLOCK
+  SECTION_CONTROL
+  TPC_CONTROL
+  SI_CONTROL
+  PRS
+  FOIS
+  AUTO_PHONE
+  RAILNET
+  CMS_SERVER
+  CGDB_BOARD
+  PA_SYSTEM
+  MISC
 }
 
 enum CauseOfFailure {
-    EQUIPMENT_FAILURE
-    PATCH_CORD_FAILURE
-    CABLE_CUT
-    CABLE_DAMAGED
-    PORT_FAILURE
-    KRONE_FAILURE
-    WAGO_FAILURE
-    LOW_INSULATION
-    HIGH_LOSS
+  EQUIPMENT_FAILURE
+  PATCH_CORD_FAILURE
+  CABLE_CUT
+  CABLE_DAMAGED
+  PORT_FAILURE
+  KRONE_FAILURE
+  WAGO_FAILURE
+  LOW_INSULATION
+  HIGH_LOSS
 }
 
 enum CableType {
-    PIJF
-    OFC
-    SWITCHBOARD_CABLE
+  PIJF
+  OFC
+  SWITCHBOARD_CABLE
 }
 
 enum CableSubType {
-    PAIR_10
-    PAIR_20
-    PAIR_50
-    QUAD_6
-    CAT_6
-    OFC_48
-    OFC_24
-    OFC_6
+  PAIR_10
+  PAIR_20
+  PAIR_50
+  QUAD_6
+  CAT_6
+  OFC_48
+  OFC_24
+  OFC_6
 }
 
 // -----------------------------------------------------------------------------
@@ -191,20 +215,20 @@ enum CableSubType {
 
 model Zone {
   id        String     @id @default(uuid())
-  name      String     @unique 
+  name      String     @unique
   code      String     @unique
   divisions Division[]
 }
 
 model Division {
-  id        String    @id @default(uuid())
-  name      String
-  code      String
-  zoneId    String
-  zone      Zone      @relation(fields: [zoneId], references: [id])
-  sections  Section[]
-  users     User[]
-  stations  Station[]
+  id          String       @id @default(uuid())
+  name        String
+  code        String
+  zoneId      String
+  zone        Zone         @relation(fields: [zoneId], references: [id])
+  sections    Section[]
+  users       User[]
+  stations    Station[]
   subsections Subsection[]
 }
 
@@ -218,60 +242,65 @@ model Section {
 }
 
 model Subsection {
-  id            String    @id @default(uuid())
-  name          String
-  code          String    
-  sectionId     String?
-  section       Section?  @relation(fields: [sectionId], references: [id])
-  startKm       Float?
-  endKm         Float?
-  
+  id        String   @id @default(uuid())
+  name      String
+  code      String
+  sectionId String?
+  section   Section? @relation(fields: [sectionId], references: [id])
+  startKm   Float?
+  endKm     Float?
+
   // Boundary definitions
   fromStationId String
   fromStation   Station   @relation("FromStationRelation", fields: [fromStationId], references: [id])
   toStationId   String
   toStation     Station   @relation("ToStationRelation", fields: [toStationId], references: [id])
   stations      Station[]
-  
-  divisionId    String
-  division      Division  @relation(fields: [divisionId], references: [id])
-  createdById   String
-  createdBy     User      @relation(fields: [createdById], references: [id])
-  
+
+  divisionId   String
+  division     Division @relation(fields: [divisionId], references: [id])
+  createdById  String
+  createdBy    User     @relation(fields: [createdById], references: [id])
+  supervisorId String
+  supervisor   User     @relation("SubsectionSupervisor", fields: [supervisorId], references: [id])
+
   // Implicit Many-to-Many: A subsection has many stations
-//   stations      Station[] 
-  failures       Failure[]
-  
-  cables        Cable[]
-  socketTests   SocketTestingReport[]
+  //   stations      Station[] 
+  failures Failure[]
+
+  cables      Cable[]
+  socketTests SocketTestingReport[]
 }
 
 model Station {
-  id             String                @id @default(uuid())
-  code           String                @unique   
-  name           String
-  
+  id   String @id @default(uuid())
+  code String @unique
+  name String
+
   // UPDATED: A station can now belong to multiple subsections
-  subsections    Subsection[]          
-  
+  subsections Subsection[]
+
   divisionId     String
   division       Division              @relation(fields: [divisionId], references: [id])
   mapX           Float                 @default(0)
   mapY           Float                 @default(0)
   locations      Location[]
-  equipments     Equipment[]           
+  equipments     Equipment[]
   maintSchedules MaintenanceSchedule[]
+  tnpItems       TnpItem[]
 
-  failures       Failure[]   // Link to failures at this station
-  maintenances   Maintenance[] // Link to maintenance at this station
+  failures     Failure[] // Link to failures at this station
+  maintenances Maintenance[] // Link to maintenance at this station
 
   // Explicit relations for block boundaries
   subsectionsFrom Subsection[] @relation("FromStationRelation")
   subsectionsTo   Subsection[] @relation("ToStationRelation")
-  
-  createdById    String
-  createdBy      User                  @relation("UserStations", fields: [createdById], references: [id])
-  createdAt      DateTime              @default(now())
+
+  createdById  String
+  createdBy    User     @relation("UserStations", fields: [createdById], references: [id])
+  supervisorId String
+  supervisor   User     @relation("StationSupervisor", fields: [supervisorId], references: [id])
+  createdAt    DateTime @default(now())
 }
 
 // -----------------------------------------------------------------------------
@@ -279,41 +308,48 @@ model Station {
 // -----------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  username     String   @unique
-  password     String
-  role         UserRole @default(VIEWER)
-  designation  String
-  divisionId   String
-  division     Division @relation(fields: [divisionId], references: [id])
-  inchargeId   String?
-  incharge     User?    @relation("InchargeChain", fields: [inchargeId], references: [id])
-  subordinates User[]   @relation("InchargeChain")
-  subSections  Subsection[]
-  reportedCableCuts    CableCut[]            @relation("Reporter")
-  testedCableReports   CableTestReport[]     @relation("Tester")
-  ackedCableReports    CableTestReport[]     @relation("TestAck")
-  testedSocketReports  SocketTestingReport[] @relation("SocketTester")
-  createdTasks       Task[]              @relation("CreatedBy")
-  assignedTasks      Task[]              @relation("AssignedTo")
-  projects       Project[]  // Relation to projects they own
-  comments       Comment[]  // Relation to comments they author
+  id                  String                @id @default(uuid())
+  name                String
+  email               String                @unique
+  username            String                @unique
+  password            String
+  role                UserRole              @default(VIEWER)
+  designation         String
+  divisionId          String
+  division            Division              @relation(fields: [divisionId], references: [id])
+  inchargeId          String?
+  incharge            User?                 @relation("InchargeChain", fields: [inchargeId], references: [id])
+  subordinates        User[]                @relation("InchargeChain")
+  subSections         Subsection[]
+  reportedCableCuts   CableCut[]            @relation("Reporter")
+  testedCableReports  CableTestReport[]     @relation("Tester")
+  ackedCableReports   CableTestReport[]     @relation("TestAck")
+  testedSocketReports SocketTestingReport[] @relation("SocketTester")
+  createdTasks        Task[]                @relation("CreatedBy")
+  assignedTasks       Task[]                @relation("AssignedTo")
+  projects            Project[] // Relation to projects they own
+  comments            Comment[] // Relation to comments they author
+  taskHistoryEntries  TaskHistory[]         @relation("TaskHistoryActor")
   // --- EC Testing Relations ---
-	
-	// Sockets where this user was the 'testedBy' (The person in the field)
-	EcSocketsTestedByMe    EcTesting[] @relation("FieldTestingAssignment")
-	
-	// Sockets where this user was the 'testedWith' (The person in the Testroom)
-	EcSocketsTestedWithMe  EcTesting[] @relation("TestroomVerificationAssignment")
-  movements            DailyMovement[]
-  inspectionNotes      InspectionNote[]
-  stations             Station[]             @relation("UserStations")
-  equipmentsCreated    Equipment[]           @relation("UserEquipments")
-  circuitAudits        CircuitAuditLog[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  // Sockets where this user was the 'testedBy' (The person in the field)
+  EcSocketsTestedByMe EcTesting[] @relation("FieldTestingAssignment")
+
+  // Sockets where this user was the 'testedWith' (The person in the Testroom)
+  EcSocketsTestedWithMe        EcTesting[]             @relation("TestroomVerificationAssignment")
+  movements                    DailyMovement[]
+  inspectionNotes              InspectionNote[]
+  stations                     Station[]               @relation("UserStations")
+  supervisedStations           Station[]               @relation("StationSupervisor")
+  supervisedSubsections        Subsection[]            @relation("SubsectionSupervisor")
+  equipmentsCreated            Equipment[]             @relation("UserEquipments")
+  maintenanceSchedules         MaintenanceSchedule[]   @relation("MaintenanceScheduleCreatedBy")
+  assignedMaintenanceSchedules MaintenanceSchedule[]   @relation("MaintenanceScheduleSupervisor")
+  maintenanceCompletions       MaintenanceOccurrence[] @relation("MaintenanceOccurrenceCompletedBy")
+  tnpItems                     TnpItem[]               @relation("TnpCreatedBy")
+  circuitAudits                CircuitAuditLog[]
+  createdAt                    DateTime                @default(now())
+  updatedAt                    DateTime                @updatedAt
 }
 
 // -----------------------------------------------------------------------------
@@ -321,77 +357,77 @@ model User {
 // -----------------------------------------------------------------------------
 
 model EquipmentTemplate {
-  id              String               @id @default(uuid())
-  make            String               
-  modelName       String               @unique 
-  category        EquipmentCategory
-  subCategory     EquipmentSubCategory
-  uHeight         Int                  @default(1)
-  codalLifeYears  Int                  @default(12)
-  isModular       Boolean              @default(false)
-  supply          String               // "230V AC", "-48V DC"
+  id             String               @id @default(uuid())
+  make           String
+  modelName      String               @unique
+  category       EquipmentCategory
+  subCategory    EquipmentSubCategory
+  uHeight        Int                  @default(1)
+  codalLifeYears Int                  @default(12)
+  isModular      Boolean              @default(false)
+  supply         String // "230V AC", "-48V DC"
 
-  layer           Int?                 
-  isPoe           Boolean?             @default(false)             
-  switchingCapacity Float?             // in Gbps
-  isMPLSEnables    Boolean            @default(false)
-  
+  layer             Int?
+  isPoe             Boolean? @default(false)
+  switchingCapacity Float? // in Gbps
+  isMPLSEnables     Boolean  @default(false)
+
   // --- UPS Specifics ---
-  capacityKva     Float?               // Capacity in KVA
-  operatingMode   String?              // e.g., "Online Double Conversion", "Line Interactive"
-  
+  capacityKva   Float? // Capacity in KVA
+  operatingMode String? // e.g., "Online Double Conversion", "Line Interactive"
+
   // --- Battery Set Specifics ---
-  batteryType       String?              // "VRLA", "Lithium-ion", etc. (Type of battery)
-  defaultCellCount Int?                @default(1) // Number of batteries in set
-  capacityAh      Float?               // Ah rating per battery/set
-  nominalCellVolt  Float?              @default(2.0)
+  batteryType      String? // "VRLA", "Lithium-ion", etc. (Type of battery)
+  defaultCellCount Int?    @default(1) // Number of batteries in set
+  capacityAh       Float? // Ah rating per battery/set
+  nominalCellVolt  Float?  @default(2.0)
 
   // Charger specifics
-  isSMRBased      Boolean?
+  isSMRBased Boolean?
 
   portConfigs EquipmentPortConfig[]
 
-  portTemplates     PortTemplate[] @relation("EquipmentToPorts")
-  instances       Equipment[]
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  portTemplates PortTemplate[] @relation("EquipmentToPorts")
+  instances     Equipment[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model PortTemplate {
-  id                  String            @id @default(uuid())
-  name                String            // e.g., "GigabitEthernet", "Power Input"
+  id       String       @id @default(uuid())
+  name     String // e.g., "GigabitEthernet", "Power Input"
   // High-level grouping
-  category          PortCategory      @default(NETWORK)
-  
+  category PortCategory @default(NETWORK)
+
   // Specific connector (Passed as string from Frontend options)
-  type              String
-  speed               String?           // e.g., "1 Gbps"
-  
+  type  String
+  speed String? // e.g., "1 Gbps"
+
   // SFP Specifics
-  isSFPInserted       Boolean           @default(false)
-  sfpType             SFPType           @default(NOT_APPLICABLE)
-  
+  isSFPInserted Boolean @default(false)
+  sfpType       SFPType @default(NOT_APPLICABLE)
+
   // Power Specifics
-  voltage             String?           // e.g., "230V AC"
-  equipmentTemplates EquipmentTemplate[] @relation("EquipmentToPorts")
-  equipmentConfigs    EquipmentPortConfig[]
-  
-  instances           Port[]
+  voltage            String? // e.g., "230V AC"
+  equipmentTemplates EquipmentTemplate[]   @relation("EquipmentToPorts")
+  equipmentConfigs   EquipmentPortConfig[]
+
+  instances Port[]
 }
 
 model EquipmentPortConfig {
-  id                  String            @id @default(uuid())
-  quantity            Int               @default(1)
-  
+  id       String @id @default(uuid())
+  quantity Int    @default(1)
+
   // Relations
   equipmentTemplate   EquipmentTemplate @relation(fields: [equipmentTemplateId], references: [id], onDelete: Cascade)
   equipmentTemplateId String
-  
-  portTemplate        PortTemplate      @relation(fields: [portTemplateId], references: [id])
-  portTemplateId      String
+
+  portTemplate   PortTemplate @relation(fields: [portTemplateId], references: [id])
+  portTemplateId String
 
   // Prevents adding the same port type twice to one piece of equipment
-  @@unique([equipmentTemplateId, portTemplateId]) 
+  @@unique([equipmentTemplateId, portTemplateId])
 }
 
 // -----------------------------------------------------------------------------
@@ -399,95 +435,95 @@ model EquipmentPortConfig {
 // -----------------------------------------------------------------------------
 
 model Equipment {
-  id               String            @id @default(uuid())
-  name             String  
-  description      String   
-  providedBy      String       
-  serialNumber     String?           @unique
-  templateId       String
-  template         EquipmentTemplate @relation(fields: [templateId], references: [id])
-  stationId        String
-  station          Station           @relation(fields: [stationId], references: [id])
-  rackId           String?
-  rack             Rack?             @relation(fields: [rackId], references: [id])
-  uPosition        Int?              
-  status           AssetStatus       @default(OPERATIONAL)
-  installationDate DateTime?
+  id                   String            @id @default(uuid())
+  name                 String
+  description          String
+  providedBy           String
+  serialNumber         String?           @unique
+  templateId           String
+  template             EquipmentTemplate @relation(fields: [templateId], references: [id])
+  stationId            String
+  station              Station           @relation(fields: [stationId], references: [id])
+  rackId               String?
+  rack                 Rack?             @relation(fields: [rackId], references: [id])
+  uPosition            Int?
+  status               AssetStatus       @default(OPERATIONAL)
+  installationDate     DateTime?
   DateOfLastMaintenace DateTime?
-  mapX           Float?                 
-  mapY           Float?         
+  mapX                 Float?
+  mapY                 Float?
 
-  maintenances   Maintenance[]
-  trcRequests    TRCRequest[]        
-  
+  maintenances         Maintenance[]
+  trcRequests          TRCRequest[]
+  maintenanceSchedules MaintenanceSchedule[]
+
   // For Battery Sets: Every cell is an entry in the DB
-  batteryCells     BatteryCell[]     
-  
-  // Actual Ports for React-Flow handles
-  ports            Port[]            
-  
-  // Logical association with circuits
-  circuits         Circuit[]         @relation("EquipmentCircuits")
+  batteryCells BatteryCell[]
 
-  createdById      String
-  createdBy        User              @relation("UserEquipments", fields: [createdById], references: [id])
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  // Actual Ports for React-Flow handles
+  ports Port[]
+
+  // Logical association with circuits
+  circuits Circuit[] @relation("EquipmentCircuits")
+
+  createdById String
+  createdBy   User     @relation("UserEquipments", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model BatteryCell {
-  id              String    @id @default(uuid())
-  cellIndex       Int       // 1 to 24
-  voltage         Float     @default(2.0)
-  status          AssetStatus @default(OPERATIONAL)
-  equipmentId     String
-  equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  id          String      @id @default(uuid())
+  cellIndex   Int // 1 to 24
+  voltage     Float       @default(2.0)
+  status      AssetStatus @default(OPERATIONAL)
+  equipmentId String
+  equipment   Equipment   @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
 }
 
-
 model Port {
-  id              String      @id @default(uuid())
-  name            String      // e.g., "GigabitEthernet 1"
-  description     String?     
-  status          PortStatus  @default(FREE)
-  
+  id          String     @id @default(uuid())
+  name        String // e.g., "GigabitEthernet 1"
+  description String?
+  status      PortStatus @default(FREE)
+
   // Logical Networking
-  portMode        NetworkMode @default(ACCESS)
-  vlans           String?     
-  ipPool          String?     
+  portMode NetworkMode @default(ACCESS)
+  vlans    String?
+  ipPool   String?
 
   // Relation to Circuits
-  circuits        Circuit[]   @relation("PortCircuits")
+  circuits Circuit[] @relation("PortCircuits")
 
   // Connectivity
-  linkAsSource    PortLink?   @relation("SourcePort")
-  linkAsTarget    PortLink?   @relation("TargetPort")
-  
-  equipmentId     String
-  equipment       Equipment   @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  linkAsSource PortLink? @relation("SourcePort")
+  linkAsTarget PortLink? @relation("TargetPort")
 
-  templateId      String
-  template        PortTemplate @relation(fields: [templateId], references: [id])
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  templateId String
+  template   PortTemplate @relation(fields: [templateId], references: [id])
 }
 
 model PortLink {
-  id               String    @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // Physical Connection Logic
-  sourcePortId     String    @unique // Ensures a port only has one outgoing cable
-  source           Port      @relation("SourcePort", fields: [sourcePortId], references: [id], onDelete: Cascade)
-  
-  targetPortId     String    @unique // Ensures a port only has one incoming cable
-  target           Port      @relation("TargetPort", fields: [targetPortId], references: [id], onDelete: Cascade)
-  
+  sourcePortId String @unique // Ensures a port only has one outgoing cable
+  source       Port   @relation("SourcePort", fields: [sourcePortId], references: [id], onDelete: Cascade)
+
+  targetPortId String @unique // Ensures a port only has one incoming cable
+  target       Port   @relation("TargetPort", fields: [targetPortId], references: [id], onDelete: Cascade)
+
   // Physical Cable Detail
-  mediaType        String?   // e.g. "Cat6", "Single Mode Fiber", "Twinax"
-  cableColor       String?   // Optional: helpful for site engineers
-  length           Float?    // Optional: meters
-  
+  mediaType  String? // e.g. "Cat6", "Single Mode Fiber", "Twinax"
+  cableColor String? // Optional: helpful for site engineers
+  length     Float? // Optional: meters
+
   // Optional link to a logical circuit
-  circuitId        String?
-  circuits         Circuit[] @relation("LinkCircuits")
+  circuitId String?
+  circuits  Circuit[] @relation("LinkCircuits")
 
   @@unique([sourcePortId, targetPortId])
 }
@@ -497,35 +533,35 @@ model PortLink {
 // -----------------------------------------------------------------------------
 
 model Circuit {
-	id              String            @id @default(uuid())
-	circuitIdString String            @unique // e.g., "RTM-PRS-01"
-	description     String?
-	status          AssetStatus       @default(OPERATIONAL)
-	
-	// Relations: Transmission Media
-	// A circuit can occupy multiple pairs or fibers (e.g., 2 pairs for certain Block instruments)
-	copperPairs     CopperPair[]      @relation("CircuitToPairs")
-	fibers          Fiber[]           @relation("CircuitToFibers")
+  id              String      @id @default(uuid())
+  circuitIdString String      @unique // e.g., "RTM-PRS-01"
+  description     String?
+  status          AssetStatus @default(OPERATIONAL)
 
-	// Relations: Network Infrastructure
-	equipments      Equipment[]       @relation("EquipmentCircuits")
-	ports           Port[]            @relation("PortCircuits")
-	links           PortLink[]        @relation("LinkCircuits")
+  // Relations: Transmission Media
+  // A circuit can occupy multiple pairs or fibers (e.g., 2 pairs for certain Block instruments)
+  copperPairs CopperPair[] @relation("CircuitToPairs")
+  fibers      Fiber[]      @relation("CircuitToFibers")
 
-	auditLogs       CircuitAuditLog[]
-	createdAt       DateTime          @default(now())
-	updatedAt       DateTime          @updatedAt
+  // Relations: Network Infrastructure
+  equipments Equipment[] @relation("EquipmentCircuits")
+  ports      Port[]      @relation("PortCircuits")
+  links      PortLink[]  @relation("LinkCircuits")
+
+  auditLogs CircuitAuditLog[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 }
 
 model CircuitAuditLog {
-  id              String    @id @default(uuid())
-  circuitId       String
-  circuit         Circuit   @relation(fields: [circuitId], references: [id])
-  action          String    // e.g. "PORT_MIGRATION"
-  description     String    // e.g. "Moved from Port 11 to 12 due to faulty port"
-  userId          String
-  user            User      @relation(fields: [userId], references: [id])
-  createdAt       DateTime  @default(now())
+  id          String   @id @default(uuid())
+  circuitId   String
+  circuit     Circuit  @relation(fields: [circuitId], references: [id])
+  action      String // e.g. "PORT_MIGRATION"
+  description String // e.g. "Moved from Port 11 to 12 due to faulty port"
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
 }
 
 // -----------------------------------------------------------------------------
@@ -533,304 +569,348 @@ model CircuitAuditLog {
 // -----------------------------------------------------------------------------
 
 model Project {
-  id            String   @id @default(uuid())
+  id            String  @id @default(uuid())
   name          String
   description   String?
-  status        String   @default("PLANNED") // PLANNED, ONGOING, COMPLETED
-  totalProgress Float    @default(0) 
-  
-  tasks         Task[]   // All tasks linked to this project
-  
-  ownerId       String
-  owner         User     @relation(fields: [ownerId], references: [id])
-  startDate     DateTime
-  endDate       DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  status        String  @default("PLANNED") // PLANNED, ONGOING, COMPLETED
+  totalProgress Float   @default(0)
+
+  tasks Task[] // All tasks linked to this project
+
+  ownerId   String
+  owner     User      @relation(fields: [ownerId], references: [id])
+  startDate DateTime
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 model Task {
-  id              String      @id @default(uuid())
-  title           String      
-  type            TaskType  
-  description     String
-  status          String      @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
-  priority        String      @default("MEDIUM")
-  
+  id          String   @id @default(uuid())
+  title       String
+  type        TaskType
+  description String
+  status      String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  priority    String   @default("MEDIUM")
+
   // Weightage: Optional. Only used if type == PROJECT 
   // or if the task is part of a Project
-  weight          Float?      
+  weight Float?
 
   // Project Link
-  projectId       String?
-  project         Project?    @relation(fields: [projectId], references: [id])
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
 
   // Technical Sub-tables (1-to-1)
-  failure         Failure?    
-  trcRequest      TRCRequest? 
-  maintenance     Maintenance?
+  failure     Failure?
+  trcRequest  TRCRequest?
+  maintenance Maintenance?
 
   // Social/Communication
-  comments        Comment[]
+  comments Comment[]
+  history  TaskHistory[]
 
   // Ownership & Responsibility
-  ownerId         String
-  owner           User        @relation("CreatedBy", fields: [ownerId], references: [id])
-  assignedToId    String?
-  assignedTo      User?       @relation("AssignedTo", fields: [assignedToId], references: [id])
-  
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  ownerId      String
+  owner        User    @relation("CreatedBy", fields: [ownerId], references: [id])
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedTo", fields: [assignedToId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TaskHistory {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?    @relation("TaskHistoryActor", fields: [actorId], references: [id])
+  action    String
+  fromValue String?
+  toValue   String?
+  details   String?
+  createdAt DateTime @default(now())
 }
 
 model Comment {
-  id          String   @id @default(uuid())
-  content     String   @db.Text
-  attachment  String?  
-  taskId      String
-  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  authorId    String
-  author      User     @relation(fields: [authorId], references: [id])
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  content    String   @db.Text
+  attachment String?
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
 }
 
 model Failure {
-    id              String         @id @default(uuid())
-    taskId          String         @unique
-    task            Task           @relation(fields: [taskId], references: [id])
-    
-    type            FailureType
-    cause           CauseOfFailure
-    
-    // Geographic Context
-    locationId      String?     
-    location        Location?      @relation(fields: [locationId], references: [id])
-    subsectionId    String?     
-    subsection      Subsection?    @relation(fields: [subsectionId], references: [id])
+  id     String @id @default(uuid())
+  taskId String @unique
+  task   Task   @relation(fields: [taskId], references: [id])
 
-    stationId       String?        // Add this back if you want direct Station access
-    station         Station?       @relation(fields: [stationId], references: [id])
+  type  FailureType
+  cause CauseOfFailure
 
-    // Specific Chain for Cable Issues
-    cableCutId      String?        @unique
-    cableCut        CableCut?      @relation(fields: [cableCutId], references: [id])
-    
-    restorationTime DateTime?
-    remarks         String?
+  // Geographic Context
+  locationId   String?
+  location     Location?   @relation(fields: [locationId], references: [id])
+  subsectionId String?
+  subsection   Subsection? @relation(fields: [subsectionId], references: [id])
+
+  stationId String? // Add this back if you want direct Station access
+  station   Station? @relation(fields: [stationId], references: [id])
+
+  // Specific Chain for Cable Issues
+  cableCutId String?   @unique
+  cableCut   CableCut? @relation(fields: [cableCutId], references: [id])
+
+  restorationTime DateTime?
+  remarks         String?
 }
 
 model TRCRequest {
-  id              String    @id @default(uuid())
-  taskId        String    @unique
-  task          Task    @relation(fields: [taskId], references: [id])
-  
-  equipmentId     String
-  equipment       Equipment @relation(fields: [equipmentId], references: [id])
-  status          String    
-  certificateNo   String?   
-  receivedDate    DateTime?
-  returnDate      DateTime?
+  id     String @id @default(uuid())
+  taskId String @unique
+  task   Task   @relation(fields: [taskId], references: [id])
+
+  equipmentId   String
+  equipment     Equipment @relation(fields: [equipmentId], references: [id])
+  status        String
+  certificateNo String?
+  receivedDate  DateTime?
+  returnDate    DateTime?
 }
 
 model Cable {
-	id                  String            @id @default(uuid())
-	type                CableType    
-	subType             CableSubType        
-	maintenanceBy       String            // Authority / In-charge
-	length              String            // Cable length in meters
-	dateOfCommissioning DateTime?
-	side                TrackSide         // UP or DOWN side of track
-	
-	// Structural Metadata for Auto-Generation
-	quadCount           Int               @default(0)
-	pairCount           Int               @default(0)
-	fiberCount          Int               @default(0)
-	tubeCount           Int               @default(0)
-	
-	// Geographic/Hierarchy Relations
-	subsectionId        String
-	subsection          Subsection        @relation(fields: [subsectionId], references: [id])
-	
-	// Child Asset Collections
-	copperPairs         CopperPair[]
-	fibers              Fiber[]
-	ecSockets           EcSocket[]
-	sideSegments        CableSideSegment[]
-	
-	// Maintenance & Reliability Records
-	cuts                CableCut[]
-	joints              Joint[]
-	testReports     CableTestReport[]
-	
-	createdAt           DateTime          @default(now())
-	updatedAt           DateTime          @updatedAt
+  id                  String       @id @default(uuid())
+  type                CableType
+  subType             CableSubType
+  maintenanceBy       String // Authority / In-charge
+  length              String // Cable length in meters
+  dateOfCommissioning DateTime?
+  side                TrackSide // UP or DOWN side of track
+
+  // Structural Metadata for Auto-Generation
+  quadCount  Int @default(0)
+  pairCount  Int @default(0)
+  fiberCount Int @default(0)
+  tubeCount  Int @default(0)
+
+  // Geographic/Hierarchy Relations
+  subsectionId String
+  subsection   Subsection @relation(fields: [subsectionId], references: [id])
+
+  // Child Asset Collections
+  copperPairs  CopperPair[]
+  fibers       Fiber[]
+  ecSockets    EcSocket[]
+  sideSegments CableSideSegment[]
+
+  // Maintenance & Reliability Records
+  cuts        CableCut[]
+  joints      Joint[]
+  testReports CableTestReport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model CableSideSegment {
-	id        String    @id @default(uuid())
-	cableId   String
-	cable     Cable     @relation(fields: [cableId], references: [id], onDelete: Cascade)
-	fromKm    Float
-	toKm      Float
-	side      TrackSide
-	createdAt DateTime  @default(now())
+  id        String    @id @default(uuid())
+  cableId   String
+  cable     Cable     @relation(fields: [cableId], references: [id], onDelete: Cascade)
+  fromKm    Float
+  toKm      Float
+  side      TrackSide
+  createdAt DateTime  @default(now())
 }
 
 model CopperPair {
-	id          String    @id @default(uuid())
-	quadNo      Int       // e.g., 1 to 6
-	quadColor   String?   // Ribbon color
-	pairNo      Int       // 1 to 4 per quad
-	pairColor   String    // White/Orange, etc.
-	
-	// Relation to Circuit
-	circuits    Circuit[] @relation("CircuitToPairs")
-	
-	cableId     String
-	cable       Cable     @relation(fields: [cableId], references: [id], onDelete: Cascade)
+  id        String  @id @default(uuid())
+  quadNo    Int // e.g., 1 to 6
+  quadColor String? // Ribbon color
+  pairNo    Int // 1 to 4 per quad
+  pairColor String // White/Orange, etc.
+
+  // Relation to Circuit
+  circuits Circuit[] @relation("CircuitToPairs")
+
+  cableId String
+  cable   Cable  @relation(fields: [cableId], references: [id], onDelete: Cascade)
 }
 
 model Fiber {
-	id          String    @id @default(uuid())
-	tubeNo      Int       
-	tubeColor   String   
-	fiberNo     Int       
-	fiberColor  String   
-	
-	// Relation to Circuit
-	circuits    Circuit[] @relation("CircuitToFibers")
-	
-	cableId     String
-	cable       Cable     @relation(fields: [cableId], references: [id], onDelete: Cascade)
+  id         String @id @default(uuid())
+  tubeNo     Int
+  tubeColor  String
+  fiberNo    Int
+  fiberColor String
+
+  // Relation to Circuit
+  circuits Circuit[] @relation("CircuitToFibers")
+
+  cableId String
+  cable   Cable  @relation(fields: [cableId], references: [id], onDelete: Cascade)
 }
 
 model EcSocket {
-	id                  String      @id @default(uuid())
-	poleKm              String      // e.g., '542/12'
-	
-	// Relations
-	cableId             String
-	cable               Cable       @relation(fields: [cableId], references: [id], onDelete: Cascade)
-	
-	// History of all tests performed on this specific socket
-	testHistory         EcTesting[]
+  id     String @id @default(uuid())
+  poleKm String // e.g., '542/12'
 
-	createdAt           DateTime    @default(now())
+  // Relations
+  cableId String
+  cable   Cable  @relation(fields: [cableId], references: [id], onDelete: Cascade)
+
+  // History of all tests performed on this specific socket
+  testHistory EcTesting[]
+
+  createdAt DateTime @default(now())
 }
 
 model EcTesting {
-	id                  String    @id @default(uuid())
-	testedOn            DateTime  @default(now())
-	
-	// Physical Status during this specific test
-	isPainted           Boolean   @default(false)
-	isPlatformProper    Boolean   @default(false)
-	communication       Boolean   @default(true)
-	socketPoleHeight    String    // Recorded height at the time of testing
-	remarks             String?
+  id       String   @id @default(uuid())
+  testedOn DateTime @default(now())
 
-	// Accountability
-	// This must match the string in the User model exactly
-	testedById          String?
-	testedBy            User?     @relation("FieldTestingAssignment", fields: [testedById], references: [id])
-	
-	testWithId          String?
-	testedWith          User?     @relation("TestroomVerificationAssignment", fields: [testWithId], references: [id])
-	
-	// Relation to the physical socket
-	socketId            String
-	socket              EcSocket  @relation(fields: [socketId], references: [id], onDelete: Cascade)
+  // Physical Status during this specific test
+  isPainted        Boolean @default(false)
+  isPlatformProper Boolean @default(false)
+  communication    Boolean @default(true)
+  socketPoleHeight String // Recorded height at the time of testing
+  remarks          String?
+
+  // Accountability
+  // This must match the string in the User model exactly
+  testedById String?
+  testedBy   User?   @relation("FieldTestingAssignment", fields: [testedById], references: [id])
+
+  testWithId String?
+  testedWith User?   @relation("TestroomVerificationAssignment", fields: [testWithId], references: [id])
+
+  // Relation to the physical socket
+  socketId String
+  socket   EcSocket @relation(fields: [socketId], references: [id], onDelete: Cascade)
 }
 
 model CableCut {
-  id                  String    @id @default(uuid())
-  cableId             String
-  cable               Cable     @relation(fields: [cableId], references: [id])
-  
+  id      String @id @default(uuid())
+  cableId String
+  cable   Cable  @relation(fields: [cableId], references: [id])
+
   // Back-relation to Failure (The chain)
-  failure             Failure?  
+  failure Failure?
 
   reportedById        String
   reportedBy          User      @relation("Reporter", fields: [reportedById], references: [id])
   locationKM          String
   cutDateTime         DateTime  @default(now())
-  restorationDateTime DateTime? 
+  restorationDateTime DateTime?
   putRightDetails     String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 }
 
 model CableTestReport {
-  id                String    @id @default(uuid())
+  id                String   @id @default(uuid())
   cableId           String
-  cable               Cable     @relation(fields: [cableId], references: [id])
+  cable             Cable    @relation(fields: [cableId], references: [id])
   testedById        String
-  testedBy          User      @relation("Tester", fields: [testedById], references: [id])
-  testDate          DateTime  @default(now())
+  testedBy          User     @relation("Tester", fields: [testedById], references: [id])
+  testDate          DateTime @default(now())
   insulationRes     String?
   dbLoss            Float?
-  isAckByIncharge   Boolean   @default(false)
+  isAckByIncharge   Boolean  @default(false)
   ackByInchargeById String?
-  ackByInchargeBy   User?     @relation("TestAck", fields: [ackByInchargeById], references: [id])
+  ackByInchargeBy   User?    @relation("TestAck", fields: [ackByInchargeById], references: [id])
 }
 
 model SocketTestingReport {
-  id                String     @id @default(uuid())
-  locationKM        String
-  subsectionId      String
+  id              String     @id @default(uuid())
+  locationKM      String
+  subsectionId    String
   subsection      Subsection @relation(fields: [subsectionId], references: [id])
-  testedById        String
-  testedBy          User       @relation("SocketTester", fields: [testedById], references: [id])
-  isFunctional      Boolean    @default(true)
-  isAckByIncharge   Boolean    @default(false)
+  testedById      String
+  testedBy        User       @relation("SocketTester", fields: [testedById], references: [id])
+  isFunctional    Boolean    @default(true)
+  isAckByIncharge Boolean    @default(false)
 }
 
 model Joint {
-  id              String   @id @default(uuid())
-  location        String   
-  cableId         String
-  cable           Cable    @relation(fields: [cableId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(uuid())
+  location  String
+  cableId   String
+  cable     Cable    @relation(fields: [cableId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model MaintenanceSchedule {
-  id              String    @id @default(uuid())
-  title           String
-  frequency       Frequency @default(MONTHLY)
-  nextDueDate     DateTime
-  stationId       String
-  station         Station   @relation(fields: [stationId], references: [id])
+  id               String                    @id @default(uuid())
+  title            String
+  description      String?
+  frequency        Frequency                 @default(MONTHLY)
+  nextDueDate      DateTime
+  remindBeforeDays Int?
+  status           MaintenanceScheduleStatus @default(ACTIVE)
+  stationId        String
+  station          Station                   @relation(fields: [stationId], references: [id])
+  equipmentId      String?
+  equipment        Equipment?                @relation(fields: [equipmentId], references: [id])
+  locationId       String?
+  location         Location?                 @relation(fields: [locationId], references: [id])
+  createdById      String?
+  createdBy        User?                     @relation("MaintenanceScheduleCreatedBy", fields: [createdById], references: [id])
+  supervisorId     String
+  supervisor       User                      @relation("MaintenanceScheduleSupervisor", fields: [supervisorId], references: [id])
+  occurrences      MaintenanceOccurrence[]
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @default(now()) @updatedAt
+}
+
+model MaintenanceOccurrence {
+  id            String                      @id @default(uuid())
+  scheduleId    String
+  schedule      MaintenanceSchedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  dueDate       DateTime
+  status        MaintenanceOccurrenceStatus @default(OPEN)
+  completedAt   DateTime?
+  completedById String?
+  completedBy   User?                       @relation("MaintenanceOccurrenceCompletedBy", fields: [completedById], references: [id])
+  remarks       String?
+  proofUrls     String[]                    @default([])
+  createdAt     DateTime                    @default(now())
 }
 
 model InspectionNote {
-  id              String    @id @default(uuid())
+  id              String   @id @default(uuid())
   title           String
-  details         String    @db.Text
+  details         String   @db.Text
   engineerId      String
-  engineer        User      @relation(fields: [engineerId], references: [id])
-  isAckByIncharge Boolean   @default(false)
-  inspectionDate  DateTime  @default(now())
+  engineer        User     @relation(fields: [engineerId], references: [id])
+  isAckByIncharge Boolean  @default(false)
+  inspectionDate  DateTime @default(now())
 }
 
 model DailyMovement {
-  id              String    @id @default(uuid())
+  id              String   @id @default(uuid())
   date            DateTime
   locationPlanned String
   purpose         String
   userId          String
-  user            User      @relation(fields: [userId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
 }
 
 model Location {
-  id          String    @id @default(uuid())
-  name        String  
-  description String 
-  stationId   String
-  failures       Failure[]
-  maintenances   Maintenance[]
-  station     Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  racks       Rack[]
+  id                   String                @id @default(uuid())
+  name                 String
+  description          String
+  stationId            String
+  failures             Failure[]
+  maintenances         Maintenance[]
+  maintenanceSchedules MaintenanceSchedule[]
+  tnpItems             TnpItem[]
+  station              Station               @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  racks                Rack[]
 }
 
 model Rack {
@@ -838,26 +918,42 @@ model Rack {
   description String
   heightU     Int
   type        RackType
-  name        String    
+  name        String
   locationId  String
   location    Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
   equipments  Equipment[]
 }
 
+model TnpItem {
+  id          String    @id @default(uuid())
+  tnpNumber   String    @unique
+  name        String
+  description String?
+  type        TnpType
+  stationId   String
+  station     Station   @relation(fields: [stationId], references: [id])
+  locationId  String?
+  location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  createdById String
+  createdBy   User      @relation("TnpCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model Maintenance {
-  id                String    @id @default(uuid())
-  taskId            String    @unique
-  task              Task      @relation(fields: [taskId], references: [id])
-  
-  date              DateTime  @default(now())
-  
+  id     String @id @default(uuid())
+  taskId String @unique
+  task   Task   @relation(fields: [taskId], references: [id])
+
+  date DateTime @default(now())
+
   // Geographic/Asset Context
-  locationId        String?     
-  location          Location?  @relation(fields: [locationId], references: [id])
-  stationId         String?    
-  station           Station?   @relation(fields: [stationId], references: [id])
-  equipmentId       String?
-  equipment         Equipment? @relation(fields: [equipmentId], references: [id])
-  
-  remarks           String?
+  locationId  String?
+  location    Location?  @relation(fields: [locationId], references: [id])
+  stationId   String?
+  station     Station?   @relation(fields: [stationId], references: [id])
+  equipmentId String?
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id])
+
+  remarks String?
 }

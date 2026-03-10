@@ -17,6 +17,7 @@ import subSectionroutes from "./src/routes/sub-section-routes.js";
 import taskRoutes from "./src/routes/task-routes.js";
 import userRoutes from "./src/routes/user-routes.js";
 import maintenanceScheduleRoutes from "./src/routes/maintenance-schedule-routes.js";
+import tnpRoutes from "./src/routes/tnp-routes.js";
 import cron from "node-cron";
 import { runMaintenanceRemindersJob } from "./src/lib/maintenance-runner.js";
 
@@ -50,6 +51,7 @@ app.use("/task", taskRoutes);
 app.use("/user", userRoutes);
 app.use("/cable", cableRoutes);
 app.use("/maintenance", maintenanceScheduleRoutes);
+app.use("/tnp", tnpRoutes);
 
 if (process.env.ENABLE_SCHEDULER !== "false") {
 	cron.schedule(

@@ -1,0 +1,2 @@
+-- This migration had destructive index drops generated out of sequence.
+-- Kept intentionally as a no-op to preserve migration history ordering.

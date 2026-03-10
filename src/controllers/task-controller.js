@@ -5,6 +5,19 @@ import {
 	ESCALATION_MAX_LEVEL,
 } from "../lib/sla.js";
 
+const appendTaskHistory = async (db, { taskId, actorId, action, fromValue, toValue, details }) => {
+	return db.taskHistory.create({
+		data: {
+			taskId,
+			actorId: actorId || null,
+			action,
+			fromValue: fromValue || null,
+			toValue: toValue || null,
+			details: details || null,
+		},
+	});
+};
+
 /**
  * HELPER: Trigger project progress recalculation
  */
@@ -66,6 +79,24 @@ export const createTask = async (req, res) => {
 				},
 			});
 
+			await appendTaskHistory(tx, {
+				taskId: task.id,
+				actorId: ownerId,
+				action: "TASK_CREATED",
+				details: `Task created with priority ${priority || "MEDIUM"}`,
+			});
+
+			if (assignedToId) {
+				await appendTaskHistory(tx, {
+					taskId: task.id,
+					actorId: ownerId,
+					action: "ASSIGNEE_UPDATED",
+					fromValue: "UNASSIGNED",
+					toValue: assignedToId,
+					details: "Task assigned during creation",
+				});
+			}
+
 			// 2. Create the Specialized Sub-entry
 			if (type === "FAILURE" && failureData) {
 				const slaDueAt = computeSlaDueAt(failureReportedAt, priority);
@@ -78,6 +109,12 @@ export const createTask = async (req, res) => {
 						taskId: task.id,
 					},
 				});
+				await appendTaskHistory(tx, {
+					taskId: task.id,
+					actorId: ownerId,
+					action: "FAILURE_DETAILS_CREATED",
+					details: "Failure details initialized",
+				});
 			} else if (type === "MAINTENANCE" && maintenanceData) {
 				await tx.maintenance.create({
 					data: {
@@ -85,12 +122,24 @@ export const createTask = async (req, res) => {
 						taskId: task.id,
 					},
 				});
+				await appendTaskHistory(tx, {
+					taskId: task.id,
+					actorId: ownerId,
+					action: "MAINTENANCE_DETAILS_CREATED",
+					details: "Maintenance details initialized",
+				});
 			} else if (type === "TRC" && trcData) {
 				await tx.tRCRequest.create({
 					data: {
 						...trcData,
 						taskId: task.id,
 					},
+				});
+				await appendTaskHistory(tx, {
+					taskId: task.id,
+					actorId: ownerId,
+					action: "TRC_DETAILS_CREATED",
+					details: "TRC details initialized",
 				});
 			}
 
@@ -119,7 +168,7 @@ export const updateTaskStatus = async (req, res) => {
 	try {
 		const currentTask = await prisma.task.findUnique({
 			where: { id },
-			select: { assignedToId: true, type: true, projectId: true },
+			select: { assignedToId: true, type: true, projectId: true, status: true },
 		});
 
 		if (!currentTask) {
@@ -134,9 +183,24 @@ export const updateTaskStatus = async (req, res) => {
 			}
 		}
 
-		const task = await prisma.task.update({
-			where: { id },
-			data: { status },
+		const task = await prisma.$transaction(async (tx) => {
+			const updatedTask = await tx.task.update({
+				where: { id },
+				data: { status },
+			});
+
+			if (currentTask.status !== status) {
+				await appendTaskHistory(tx, {
+					taskId: id,
+					actorId: userId,
+					action: "STATUS_CHANGED",
+					fromValue: currentTask.status,
+					toValue: status,
+					details: `Status moved from ${currentTask.status} to ${status}`,
+				});
+			}
+
+			return updatedTask;
 		});
 
 		// If this task belongs to a project, update the project's total progress
@@ -207,6 +271,10 @@ export const getTaskById = async (req, res) => {
 					include: { author: { select: { name: true } } },
 					orderBy: { createdAt: "desc" },
 				},
+				history: {
+					include: { actor: { select: { id: true, name: true, username: true } } },
+					orderBy: { createdAt: "desc" },
+				},
 				_count: { select: { comments: true } },
 			},
 		});
@@ -227,6 +295,7 @@ export const getTaskById = async (req, res) => {
 export const upsertFailureForTask = async (req, res) => {
 	const { id: taskId } = req.params;
 	const failureData = req.body || {};
+	const actorId = req.user.id;
 
 	try {
 		const task = await prisma.task.findUnique({
@@ -255,11 +324,37 @@ export const upsertFailureForTask = async (req, res) => {
 
 		let failure;
 		if (task.failure) {
+			const before = task.failure;
 			failure = await prisma.failure.update({
 				where: { taskId },
 				data: {
 					...cleanedFailureData,
 				},
+			});
+
+			const trackedFields = [
+				"type",
+				"cause",
+				"stationId",
+				"locationId",
+				"subsectionId",
+				"restorationTime",
+				"remarks",
+				"cableCutId",
+			];
+
+			const changedFields = trackedFields.filter(
+				(key) => (before[key] || null) !== (failure[key] || null)
+			);
+
+			await appendTaskHistory(prisma, {
+				taskId,
+				actorId,
+				action: "FAILURE_DETAILS_UPDATED",
+				details:
+					changedFields.length > 0
+						? `Updated fields: ${changedFields.join(", ")}`
+						: "Failure details submitted",
 			});
 		} else {
 			failure = await prisma.failure.create({
@@ -267,6 +362,13 @@ export const upsertFailureForTask = async (req, res) => {
 					...cleanedFailureData,
 					taskId,
 				},
+			});
+
+			await appendTaskHistory(prisma, {
+				taskId,
+				actorId,
+				action: "FAILURE_DETAILS_CREATED",
+				details: "Failure details created",
 			});
 		}
 
@@ -285,13 +387,27 @@ export const addTaskComment = async (req, res) => {
 	const authorId = req.user.id;
 
 	try {
-		const comment = await prisma.comment.create({
-			data: {
-				content,
+		const comment = await prisma.$transaction(async (tx) => {
+			const createdComment = await tx.comment.create({
+				data: {
+					content,
+					taskId,
+					authorId,
+				},
+				include: { author: { select: { name: true } } },
+			});
+
+			await appendTaskHistory(tx, {
 				taskId,
-				authorId,
-			},
-			include: { author: { select: { name: true } } },
+				actorId: authorId,
+				action: "COMMENT_ADDED",
+				details:
+					content && content.length > 140
+						? `${content.slice(0, 140)}...`
+						: content || "Comment added",
+			});
+
+			return createdComment;
 		});
 
 		res.status(201).json(comment);
@@ -313,12 +429,23 @@ export const addSseInchargeRemark = async (req, res) => {
 	}
 
 	try {
-		const comment = await prisma.comment.create({
-			data: {
-				content: `SSE Remark: ${remark.trim()}`,
+		const comment = await prisma.$transaction(async (tx) => {
+			const createdComment = await tx.comment.create({
+				data: {
+					content: `SSE Remark: ${remark.trim()}`,
+					taskId,
+					authorId: userId,
+				},
+			});
+
+			await appendTaskHistory(tx, {
 				taskId,
-				authorId: userId,
-			},
+				actorId: userId,
+				action: "SSE_REMARK_ADDED",
+				details: remark.trim(),
+			});
+
+			return createdComment;
 		});
 
 		res.status(200).json(comment);

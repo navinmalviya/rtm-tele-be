@@ -1,0 +1,3 @@
+-- This migration was generated with an invalid operation for its position
+-- in the sequence (the index is created in a later migration).
+-- Keep as no-op to preserve migration history ordering.

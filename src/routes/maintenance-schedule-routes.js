@@ -5,6 +5,7 @@ import {
 	listMaintenanceSchedules,
 	listOverdueMaintenance,
 	markMaintenanceCompleted,
+	myMaintenanceSummary,
 	runMaintenanceReminders,
 	toggleMaintenanceScheduleStatus,
 	updateMaintenanceSchedule,
@@ -26,6 +27,12 @@ router.get(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.ASSET_READ),
 	listMaintenanceSchedules,
+);
+router.get(
+	"/my-summary",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_READ),
+	myMaintenanceSummary,
 );
 router.patch(
 	"/:id",

@@ -142,6 +142,7 @@ export const findAllEquipment = async (req, res) => {
 			include: {
 				template: true,
 				station: { select: { name: true, code: true } },
+				createdBy: { select: { id: true, name: true } },
 			},
 			orderBy: { createdAt: "desc" },
 		});
