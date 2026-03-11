@@ -152,6 +152,24 @@ enum MaintenanceOccurrenceStatus {
   COMPLETED
 }
 
+enum StationCircuitStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MaintenanceScheduleType {
+  STATION_INSPECTION_MAINTENANCE
+  CABLE_TESTING
+  EC_SOCKET_TESTING
+  CUSTOM
+}
+
+enum MaintenanceTargetScope {
+  STATION
+  SUBSECTION
+}
+
 enum NetworkMode {
   ACCESS
   TRUNK
@@ -235,6 +253,7 @@ model Division {
   users       User[]
   stations    Station[]
   subsections Subsection[]
+  circuitMasters DivisionCircuitMaster[]
 }
 
 model Section {
@@ -271,8 +290,9 @@ model Subsection {
 
   // Implicit Many-to-Many: A subsection has many stations
   //   stations      Station[] 
-  cables      Cable[]
-  socketTests SocketTestingReport[]
+  cables               Cable[]
+  socketTests          SocketTestingReport[]
+  maintenanceSchedules MaintenanceSchedule[]
 }
 
 model Station {
@@ -294,6 +314,7 @@ model Station {
 
   failures     Failure[] // Link to failures at this station
   maintenances Maintenance[] // Link to maintenance at this station
+  stationCircuits StationCircuit[]
 
   // Explicit relations for block boundaries
   subsectionsFrom Subsection[] @relation("FromStationRelation")
@@ -349,8 +370,13 @@ model User {
   maintenanceSchedules         MaintenanceSchedule[]   @relation("MaintenanceScheduleCreatedBy")
   assignedMaintenanceSchedules MaintenanceSchedule[]   @relation("MaintenanceScheduleSupervisor")
   maintenanceCompletions       MaintenanceOccurrence[] @relation("MaintenanceOccurrenceCompletedBy")
+  escalatedMaintenanceOccurrences MaintenanceOccurrence[] @relation("MaintenanceOccurrenceEscalatedTo")
   tnpItems                     TnpItem[]               @relation("TnpCreatedBy")
   circuitAudits                CircuitAuditLog[]
+  createdDivisionCircuitMasters DivisionCircuitMaster[] @relation("DivisionCircuitMasterCreatedBy")
+  maintainedStationCircuits    StationCircuit[]        @relation("StationCircuitMaintainedBy")
+  requestedStationCircuits     StationCircuit[]        @relation("StationCircuitRequestedBy")
+  approvedStationCircuits      StationCircuit[]        @relation("StationCircuitApprovedBy")
   createdAt                    DateTime                @default(now())
   updatedAt                    DateTime                @updatedAt
 }
@@ -851,13 +877,22 @@ model Joint {
 model MaintenanceSchedule {
   id               String                    @id @default(uuid())
   title            String
+  scheduleType     MaintenanceScheduleType   @default(CUSTOM)
+  targetScope      MaintenanceTargetScope    @default(STATION)
   description      String?
   frequency        Frequency                 @default(MONTHLY)
+  jointFrequency   Frequency?
+  isJointSchedule  Boolean                   @default(false)
+  jointDepartment  String?
   nextDueDate      DateTime
+  allowedVarianceDays Int                    @default(5)
   remindBeforeDays Int?
+  escalationRole   UserRole                  @default(SSE_TELE_INCHARGE)
   status           MaintenanceScheduleStatus @default(ACTIVE)
   stationId        String
   station          Station                   @relation(fields: [stationId], references: [id])
+  subsectionId     String?
+  subsection       Subsection?               @relation(fields: [subsectionId], references: [id])
   equipmentId      String?
   equipment        Equipment?                @relation(fields: [equipmentId], references: [id])
   locationId       String?
@@ -880,9 +915,60 @@ model MaintenanceOccurrence {
   completedAt   DateTime?
   completedById String?
   completedBy   User?                       @relation("MaintenanceOccurrenceCompletedBy", fields: [completedById], references: [id])
+  jointDoneWithName        String?
+  jointDoneWithDesignation String?
+  jointDoneWithDepartment  String?
+  escalatedAt              DateTime?
+  escalatedToId            String?
+  escalatedTo              User?            @relation("MaintenanceOccurrenceEscalatedTo", fields: [escalatedToId], references: [id])
+  inspectionChecklistSnapshot  Json?
+  inspectionChecklistResponses Json?
   remarks       String?
   proofUrls     String[]                    @default([])
   createdAt     DateTime                    @default(now())
+}
+
+model DivisionCircuitMaster {
+  id             String   @id @default(uuid())
+  code           String
+  name           String
+  description    String?
+  checklistSchema Json
+  isActive       Boolean  @default(true)
+  divisionId     String
+  division       Division @relation(fields: [divisionId], references: [id])
+  createdById    String
+  createdBy      User     @relation("DivisionCircuitMasterCreatedBy", fields: [createdById], references: [id])
+  stationCircuits StationCircuit[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([divisionId, code])
+}
+
+model StationCircuit {
+  id                String             @id @default(uuid())
+  stationId         String
+  station           Station            @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  locationId        String?
+  location          Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  circuitMasterId   String
+  circuitMaster     DivisionCircuitMaster @relation(fields: [circuitMasterId], references: [id], onDelete: Cascade)
+  identifier        String?
+  maintainedById    String
+  maintainedBy      User               @relation("StationCircuitMaintainedBy", fields: [maintainedById], references: [id])
+  requestedById     String
+  requestedBy       User               @relation("StationCircuitRequestedBy", fields: [requestedById], references: [id])
+  status            StationCircuitStatus @default(PENDING)
+  approvedById      String?
+  approvedBy        User?              @relation("StationCircuitApprovedBy", fields: [approvedById], references: [id])
+  approvedAt        DateTime?
+  rejectionReason   String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([stationId, status])
+  @@index([maintainedById])
 }
 
 model InspectionNote {
@@ -913,6 +999,7 @@ model Location {
   maintenances         Maintenance[]
   maintenanceSchedules MaintenanceSchedule[]
   tnpItems             TnpItem[]
+  stationCircuits      StationCircuit[]
   station              Station               @relation(fields: [stationId], references: [id], onDelete: Cascade)
   racks                Rack[]
 }

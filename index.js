@@ -1,12 +1,15 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
-
+import cron from "node-cron";
+import { runMaintenanceRemindersJob } from "./src/lib/maintenance-runner.js";
 import authRoutes from "./src/routes/auth-routes.js";
 import cableRoutes from "./src/routes/cable-routes.js";
+import circuitRoutes from "./src/routes/circuit-routes.js";
 import equipmentRoutes from "./src/routes/equipment-routes.js";
 import equipmentTemplateRoutes from "./src/routes/equipment-template-routes.js";
 import locationRoutes from "./src/routes/location-routes.js";
+import maintenanceScheduleRoutes from "./src/routes/maintenance-schedule-routes.js";
 import portLinkRoutes from "./src/routes/port-link-routes.js";
 import portRoutes from "./src/routes/port-routes.js";
 import portTemplateRoutes from "./src/routes/port-template-routes.js";
@@ -15,11 +18,8 @@ import rackRoutes from "./src/routes/rack-routes.js";
 import stationRoutes from "./src/routes/station-routes.js";
 import subSectionroutes from "./src/routes/sub-section-routes.js";
 import taskRoutes from "./src/routes/task-routes.js";
-import userRoutes from "./src/routes/user-routes.js";
-import maintenanceScheduleRoutes from "./src/routes/maintenance-schedule-routes.js";
 import tnpRoutes from "./src/routes/tnp-routes.js";
-import cron from "node-cron";
-import { runMaintenanceRemindersJob } from "./src/lib/maintenance-runner.js";
+import userRoutes from "./src/routes/user-routes.js";
 
 const app = express();
 
@@ -52,6 +52,7 @@ app.use("/user", userRoutes);
 app.use("/cable", cableRoutes);
 app.use("/maintenance", maintenanceScheduleRoutes);
 app.use("/tnp", tnpRoutes);
+app.use("/circuits", circuitRoutes);
 
 if (process.env.ENABLE_SCHEDULER !== "false") {
 	cron.schedule(

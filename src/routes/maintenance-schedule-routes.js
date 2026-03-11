@@ -2,6 +2,7 @@ import Router from "express";
 import {
 	createMaintenanceOccurrence,
 	createMaintenanceSchedule,
+	getOccurrenceInspectionForm,
 	listMaintenanceSchedules,
 	listOverdueMaintenance,
 	markMaintenanceCompleted,
@@ -10,9 +11,9 @@ import {
 	toggleMaintenanceScheduleStatus,
 	updateMaintenanceSchedule,
 } from "../controllers/maintenance-schedule-controller.js";
-import { verifyToken } from "../middlewares/verifiyToken.js";
-import { allowRoles } from "../middlewares/allowRoles.js";
 import { ROLE_ACCESS } from "../lib/rbac.js";
+import { allowRoles } from "../middlewares/allowRoles.js";
+import { verifyToken } from "../middlewares/verifiyToken.js";
 
 const router = Router();
 
@@ -57,6 +58,12 @@ router.patch(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.ASSET_WRITE),
 	markMaintenanceCompleted,
+);
+router.get(
+	"/occurrences/:id/inspection-form",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_READ),
+	getOccurrenceInspectionForm,
 );
 router.get(
 	"/overdue",
