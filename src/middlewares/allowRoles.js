@@ -1,6 +1,7 @@
 const normalizeRole = (role) => String(role || "").trim().toUpperCase();
 
 const ROLE_ALIASES = {
+	SR_DSTE: ["SR_DSTE", "SR_DSTE_CO"],
 	JE_SSE_TELE_SECTIONAL: [
 		"JE_SSE_TELE_SECTIONAL",
 		"FIELD_ENGINEER",
@@ -8,6 +9,7 @@ const ROLE_ALIASES = {
 		"SSE_SECTIONAL",
 		"JE/SSE_TELE_SECTIONAL",
 	],
+	TCM: ["TCM", "TECHNICIAN", "MAINTAINER"],
 	SSE_TELE_INCHARGE: ["SSE_TELE_INCHARGE", "SSE_INCHARGE"],
 };
 

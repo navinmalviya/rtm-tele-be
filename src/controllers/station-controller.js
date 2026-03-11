@@ -217,6 +217,9 @@ const getStationInternalTopology = async (req, res) => {
 				},
 				locations: {
 					include: {
+						supervisor: {
+							select: { id: true, name: true, designation: true, role: true },
+						},
 						racks: {
 							include: {
 								equipments: {
@@ -272,6 +275,15 @@ const getStationSummary = async (req, res) => {
 					select: {
 						locations: true,
 						equipments: true,
+					},
+				},
+				locations: {
+					select: {
+						id: true,
+						name: true,
+						supervisor: {
+							select: { id: true, name: true, designation: true, role: true },
+						},
 					},
 				},
 			},

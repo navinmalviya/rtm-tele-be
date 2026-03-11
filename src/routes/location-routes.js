@@ -2,7 +2,7 @@ import Router from "express";
 import {
 	createLocation,
 	deleteLocation,
-	// findLocationsByStation,
+	findAllLocations,
 	findStationLocations,
 	getLocationDetails,
 	updateLocation,
@@ -19,6 +19,14 @@ router.post(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.ASSET_WRITE),
 	createLocation,
+);
+
+// Fetch all locations for a specific station (e.g., /all/station-uuid)
+router.get(
+	"/all",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_READ),
+	findAllLocations,
 );
 
 // Fetch all locations for a specific station (e.g., /all/station-uuid)

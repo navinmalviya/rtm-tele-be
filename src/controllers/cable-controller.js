@@ -1,33 +1,32 @@
 import prisma from "../lib/prisma.js";
 
-/**
- * Official Railway Color Coding Constants
- * Based on provided technical charts for 6-Quad and 24F OFC
- */
-
-// Quad Identification based on A-Wire Color
-const QUAD_A_WIRE_COLORS = [
-	"Orange",
-	"Blue",
-	"Brown",
-	"Green",
-	"Yellow",
-	"Black",
-];
-
-// OFC Tube Sequence (1-6)
+const QUAD_A_WIRE_COLORS = ["Orange", "Blue", "Brown", "Green", "Yellow", "Black"];
 const TUBE_COLORS = ["Blue", "Orange", "Green", "Brown", "Slate", "White"];
-
-// OFC Fiber Sequence within each tube (1-4)
 const FIBER_COLORS = ["Blue", "Orange", "Green", "Natural"];
 
+const parseSideSegments = (sideSegments) => {
+	if (typeof sideSegments === "string") {
+		try {
+			return JSON.parse(sideSegments);
+		} catch {
+			return [];
+		}
+	}
+	return Array.isArray(sideSegments) ? sideSegments : [];
+};
+
 export const cableController = {
-	// 1. Get all cables for a specific Subsection with inventory counts
+	// 1) Get all subsection cables
 	getCablesBySubsection: async (req, res) => {
 		try {
 			const { subsectionId } = req.params;
+			const { divisionId, role } = req.user;
+
 			const cables = await prisma.cable.findMany({
-				where: { subsectionId },
+				where: {
+					subsectionId,
+					...(role === "SUPER_ADMIN" ? {} : { subsection: { divisionId } }),
+				},
 				include: {
 					sideSegments: true,
 					_count: {
@@ -48,15 +47,19 @@ export const cableController = {
 		}
 	},
 
-	// 2. Get full details including all generated transmission media
+	// 2) Get subsection cable details
 	getCableDetails: async (req, res) => {
 		try {
 			const { id } = req.params;
-			const cable = await prisma.cable.findUnique({
-				where: { id },
+			const { divisionId, role } = req.user;
+			const cable = await prisma.cable.findFirst({
+				where: {
+					id,
+					...(role === "SUPER_ADMIN" ? {} : { subsection: { divisionId } }),
+				},
 				include: {
 					subsection: {
-						select: { id: true, startKm: true, endKm: true },
+						select: { id: true, code: true, name: true, startKm: true, endKm: true },
 					},
 					copperPairs: {
 						orderBy: [{ quadNo: "asc" }, { pairNo: "asc" }],
@@ -89,12 +92,10 @@ export const cableController = {
 						orderBy: { fromKm: "asc" },
 					},
 					cuts: {
-						// FIX: Use cutDateTime instead of createdAt
 						orderBy: { cutDateTime: "desc" },
 						include: { reportedBy: { select: { name: true } } },
 					},
 					joints: {
-						// FIX: Use id or another existing field if createdAt is missing
 						orderBy: { id: "desc" },
 					},
 				},
@@ -110,17 +111,22 @@ export const cableController = {
 		}
 	},
 
+	// 3) Add EC socket
 	createEcSocket: async (req, res) => {
 		try {
 			const { id } = req.params;
 			const { poleKm } = req.body;
+			const { divisionId, role } = req.user;
 
 			if (!poleKm || !String(poleKm).trim()) {
 				return res.status(400).json({ message: "Pole KM is required." });
 			}
 
-			const cable = await prisma.cable.findUnique({
-				where: { id },
+			const cable = await prisma.cable.findFirst({
+				where: {
+					id,
+					...(role === "SUPER_ADMIN" ? {} : { subsection: { divisionId } }),
+				},
 				include: { subsection: { select: { startKm: true, endKm: true } } },
 			});
 
@@ -131,7 +137,13 @@ export const cableController = {
 			const rangeStart = cable.subsection?.startKm;
 			const rangeEnd = cable.subsection?.endKm;
 			const kmMatch = String(poleKm).match(/^\s*(\d+(\.\d+)?)/);
-			if (rangeStart !== null && rangeEnd !== null && kmMatch) {
+			if (
+				rangeStart !== null &&
+				rangeStart !== undefined &&
+				rangeEnd !== null &&
+				rangeEnd !== undefined &&
+				kmMatch
+			) {
 				const kmValue = Number.parseFloat(kmMatch[1]);
 				if (kmValue < rangeStart || kmValue > rangeEnd) {
 					return res.status(400).json({
@@ -153,6 +165,7 @@ export const cableController = {
 		}
 	},
 
+	// 4) Connect pair/fiber to equipment
 	connectMediaToEquipment: async (req, res) => {
 		try {
 			const { mediaType, mediaId, equipmentId, circuitIdString, description } = req.body;
@@ -184,7 +197,7 @@ export const cableController = {
 		}
 	},
 
-	// 3. Create Cable + Auto-generate Quads/Fibers based on provided logic
+	// 5) Create subsection cable + generate media
 	createCable: async (req, res) => {
 		try {
 			const {
@@ -201,26 +214,27 @@ export const cableController = {
 				tubeCount,
 				sideSegments,
 			} = req.body;
+			const { divisionId, role } = req.user;
 
-			const subsection = await prisma.subsection.findUnique({
-				where: { id: subsectionId },
-				select: { startKm: true, endKm: true },
-			});
-
-			let parsedSegments = [];
-			if (typeof sideSegments === "string") {
-				try {
-					parsedSegments = JSON.parse(sideSegments);
-				} catch {
-					parsedSegments = [];
-				}
-			} else if (Array.isArray(sideSegments)) {
-				parsedSegments = sideSegments;
+			if (!subsectionId) {
+				return res.status(400).json({ message: "subsectionId is required for subsection cable." });
 			}
 
+			const subsection = await prisma.subsection.findFirst({
+				where: {
+					id: subsectionId,
+					...(role === "SUPER_ADMIN" ? {} : { divisionId }),
+				},
+				select: { startKm: true, endKm: true },
+			});
+			if (!subsection) {
+				return res.status(400).json({ message: "Invalid subsection for your division." });
+			}
+
+			const parsedSegments = parseSideSegments(sideSegments);
 			if (parsedSegments.length) {
-				const rangeStart = subsection?.startKm;
-				const rangeEnd = subsection?.endKm;
+				const rangeStart = subsection.startKm;
+				const rangeEnd = subsection.endKm;
 				const invalid = parsedSegments.some((segment) => {
 					const fromKm = Number.parseFloat(segment.fromKm);
 					const toKm = Number.parseFloat(segment.toKm);
@@ -230,7 +244,6 @@ export const cableController = {
 					if (rangeEnd !== null && rangeEnd !== undefined && toKm > rangeEnd) return true;
 					return false;
 				});
-
 				if (invalid) {
 					return res.status(400).json({
 						message: "Side segments must be within subsection KM range.",
@@ -239,7 +252,6 @@ export const cableController = {
 			}
 
 			const result = await prisma.$transaction(async (tx) => {
-				// A. Create Master Cable Entry
 				const cable = await tx.cable.create({
 					data: {
 						type,
@@ -247,10 +259,8 @@ export const cableController = {
 						maintenanceBy,
 						subsectionId,
 						length,
-						dateOfCommissioning: dateOfCommissioning
-							? new Date(dateOfCommissioning)
-							: null,
-						side,
+						dateOfCommissioning: dateOfCommissioning ? new Date(dateOfCommissioning) : null,
+						side: side || "UP",
 						quadCount: Number.parseInt(quadCount || 0),
 						pairCount: Number.parseInt(pairCount || 0),
 						fiberCount: Number.parseInt(fiberCount || 0),
@@ -258,7 +268,6 @@ export const cableController = {
 					},
 				});
 
-				// A2. Side Segments (optional)
 				if (parsedSegments.length) {
 					const segmentRows = parsedSegments
 						.map((segment) => ({
@@ -274,21 +283,17 @@ export const cableController = {
 								segment.fromKm < segment.toKm &&
 								segment.side
 						);
-
 					if (segmentRows.length) {
 						await tx.cableSideSegment.createMany({ data: segmentRows });
 					}
 				}
 
-				// B. Generate Copper Pairs (Standard Star-Quad Logic)
 				if (type === "PIJF" || subType === "QUAD_6") {
 					const copperData = [];
 					const activeQuads = quadCount || 6;
 
 					for (let q = 1; q <= activeQuads; q++) {
 						const aWireColor = QUAD_A_WIRE_COLORS[q - 1];
-
-						// Pair 1: A-Wire (Base Quad Color) & B-Wire (White)
 						copperData.push({
 							cableId: cable.id,
 							quadNo: q,
@@ -296,8 +301,6 @@ export const cableController = {
 							pairNo: 1,
 							pairColor: `${aWireColor} / White`,
 						});
-
-						// Pair 2: C-Wire (Red) & D-Wire (Grey)
 						copperData.push({
 							cableId: cable.id,
 							quadNo: q,
@@ -306,11 +309,11 @@ export const cableController = {
 							pairColor: "Red / Grey",
 						});
 					}
-					if (copperData.length > 0)
+					if (copperData.length > 0) {
 						await tx.copperPair.createMany({ data: copperData });
+					}
 				}
 
-				// C. Generate Fibers (OFC 24F Sequence)
 				if (type === "OFC" && fiberCount > 0) {
 					const fiberData = [];
 					const totalTubes = tubeCount || 6;
@@ -322,14 +325,14 @@ export const cableController = {
 								cableId: cable.id,
 								tubeNo: t,
 								tubeColor: TUBE_COLORS[t - 1],
-								// Continuous numbering (1-24)
 								fiberNo: (t - 1) * fibersPerTube + f,
-								fiberColor: FIBER_COLORS[f - 1], // Blue, Org, Green, Natural
+								fiberColor: FIBER_COLORS[f - 1],
 							});
 						}
 					}
-					if (fiberData.length > 0)
+					if (fiberData.length > 0) {
 						await tx.fiber.createMany({ data: fiberData });
+					}
 				}
 
 				return cable;
@@ -342,7 +345,7 @@ export const cableController = {
 		}
 	},
 
-	// 4. Update Cable basic information
+	// 6) Update subsection cable metadata
 	updateCable: async (req, res) => {
 		try {
 			const { id } = req.params;
@@ -353,9 +356,7 @@ export const cableController = {
 					maintenanceBy,
 					length,
 					side,
-					dateOfCommissioning: dateOfCommissioning
-						? new Date(dateOfCommissioning)
-						: undefined,
+					dateOfCommissioning: dateOfCommissioning ? new Date(dateOfCommissioning) : undefined,
 				},
 			});
 			res.status(200).json(updated);
@@ -364,7 +365,7 @@ export const cableController = {
 		}
 	},
 
-	// 5. Delete a Cable record (Cascade takes care of children)
+	// 7) Delete subsection cable
 	deleteCable: async (req, res) => {
 		try {
 			const { id } = req.params;

@@ -372,12 +372,14 @@ async function main() {
 				name: "Control Room",
 				description: `${st.code} control telecom room`,
 				stationId: station.id,
+				supervisorId,
 			},
 			create: {
 				id: toUuid(1000 + i * 10 + 1),
 				name: "Control Room",
 				description: `${st.code} control telecom room`,
 				stationId: station.id,
+				supervisorId,
 			},
 		});
 
@@ -387,12 +389,14 @@ async function main() {
 				name: "Panel Room",
 				description: `${st.code} panel room`,
 				stationId: station.id,
+				supervisorId,
 			},
 			create: {
 				id: toUuid(1000 + i * 10 + 2),
 				name: "Panel Room",
 				description: `${st.code} panel room`,
 				stationId: station.id,
+				supervisorId,
 			},
 		});
 

@@ -6,6 +6,7 @@ import { runMaintenanceRemindersJob } from "./src/lib/maintenance-runner.js";
 import authRoutes from "./src/routes/auth-routes.js";
 import cableRoutes from "./src/routes/cable-routes.js";
 import circuitRoutes from "./src/routes/circuit-routes.js";
+import escalationMatrixRoutes from "./src/routes/escalation-matrix-routes.js";
 import equipmentRoutes from "./src/routes/equipment-routes.js";
 import equipmentTemplateRoutes from "./src/routes/equipment-template-routes.js";
 import locationRoutes from "./src/routes/location-routes.js";
@@ -16,6 +17,7 @@ import portTemplateRoutes from "./src/routes/port-template-routes.js";
 import projectRoutes from "./src/routes/project-routes.js";
 import rackRoutes from "./src/routes/rack-routes.js";
 import stationRoutes from "./src/routes/station-routes.js";
+import stationCableRoutes from "./src/routes/station-cable-routes.js";
 import subSectionroutes from "./src/routes/sub-section-routes.js";
 import taskRoutes from "./src/routes/task-routes.js";
 import tnpRoutes from "./src/routes/tnp-routes.js";
@@ -53,6 +55,8 @@ app.use("/cable", cableRoutes);
 app.use("/maintenance", maintenanceScheduleRoutes);
 app.use("/tnp", tnpRoutes);
 app.use("/circuits", circuitRoutes);
+app.use("/station-cable", stationCableRoutes);
+app.use("/escalation-matrix", escalationMatrixRoutes);
 
 if (process.env.ENABLE_SCHEDULER !== "false") {
 	cron.schedule(

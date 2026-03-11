@@ -15,9 +15,13 @@ datasource db {
 enum UserRole {
   SUPER_ADMIN
   ADMIN
+  SR_DSTE
+  DSTE
+  ADSTE
   TESTROOM
   SSE_TELE_INCHARGE
   JE_SSE_TELE_SECTIONAL
+  TCM
   TECHNICIAN
   TRC
   VIEWER
@@ -254,6 +258,7 @@ model Division {
   stations    Station[]
   subsections Subsection[]
   circuitMasters DivisionCircuitMaster[]
+  escalationMatrices EscalationMatrix[]
 }
 
 model Section {
@@ -366,6 +371,7 @@ model User {
   stations                     Station[]               @relation("UserStations")
   supervisedStations           Station[]               @relation("StationSupervisor")
   supervisedSubsections        Subsection[]            @relation("SubsectionSupervisor")
+  supervisedLocations          Location[]              @relation("LocationSupervisor")
   equipmentsCreated            Equipment[]             @relation("UserEquipments")
   maintenanceSchedules         MaintenanceSchedule[]   @relation("MaintenanceScheduleCreatedBy")
   assignedMaintenanceSchedules MaintenanceSchedule[]   @relation("MaintenanceScheduleSupervisor")
@@ -377,8 +383,26 @@ model User {
   maintainedStationCircuits    StationCircuit[]        @relation("StationCircuitMaintainedBy")
   requestedStationCircuits     StationCircuit[]        @relation("StationCircuitRequestedBy")
   approvedStationCircuits      StationCircuit[]        @relation("StationCircuitApprovedBy")
+  createdEscalationMatrices    EscalationMatrix[]      @relation("EscalationMatrixCreatedBy")
   createdAt                    DateTime                @default(now())
   updatedAt                    DateTime                @updatedAt
+}
+
+model EscalationMatrix {
+  id              String   @id @default(uuid())
+  divisionId      String
+  division        Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  level           Int
+  targetRole      UserRole
+  durationMinutes Int
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdBy       User     @relation("EscalationMatrixCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([divisionId, level])
+  @@index([divisionId, isActive])
 }
 
 // -----------------------------------------------------------------------------
@@ -744,6 +768,8 @@ model Cable {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([subsectionId])
 }
 
 model CableSideSegment {
@@ -995,13 +1021,45 @@ model Location {
   name                 String
   description          String
   stationId            String
+  supervisorId         String
   failures             Failure[]
   maintenances         Maintenance[]
   maintenanceSchedules MaintenanceSchedule[]
   tnpItems             TnpItem[]
   stationCircuits      StationCircuit[]
   station              Station               @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  supervisor           User                  @relation("LocationSupervisor", fields: [supervisorId], references: [id])
+  outgoingStationCables StationCable[]       @relation("StationCableFromLocation")
+  incomingStationCables StationCable[]       @relation("StationCableToLocation")
   racks                Rack[]
+
+  @@index([stationId])
+  @@index([supervisorId])
+}
+
+model StationCable {
+  id                  String       @id @default(uuid())
+  type                CableType
+  subType             CableSubType
+  maintenanceBy       String
+  length              String
+  dateOfCommissioning DateTime?
+
+  quadCount  Int @default(0)
+  pairCount  Int @default(0)
+  fiberCount Int @default(0)
+  tubeCount  Int @default(0)
+
+  fromLocationId String
+  fromLocation   Location @relation("StationCableFromLocation", fields: [fromLocationId], references: [id], onDelete: Cascade)
+  toLocationId   String
+  toLocation     Location @relation("StationCableToLocation", fields: [toLocationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromLocationId])
+  @@index([toLocationId])
 }
 
 model Rack {
