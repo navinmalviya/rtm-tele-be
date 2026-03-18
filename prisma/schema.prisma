@@ -29,9 +29,48 @@ enum UserRole {
   SSE_TECH
 }
 
+enum WorkExecutionStatus {
+  DRAFT_ITEMS
+  DEMAND_OPEN
+  DEMAND_CLOSED
+  ALLOCATED
+  EXECUTION
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkItemCategory {
+  EQUIPMENT
+  CABLE
+  LABOUR
+  CIVIL
+  INSTALLATION
+  TESTING
+  COMMISSIONING
+  OTHER
+}
+
+enum WorkDemandRoundStatus {
+  OPEN
+  CLOSED
+}
+
 enum TrackSide {
   UP
   DOWN
+}
+
+enum CableJointType {
+  NORMAL
+  EC
+}
+
+enum CableTestingCause {
+  SCHEDULED
+  FAILURE
+  POST_RESTORATION
+  COMMISSIONING
+  OTHER
 }
 
 enum EquipmentCategory {
@@ -259,6 +298,7 @@ model Division {
   subsections Subsection[]
   circuitMasters DivisionCircuitMaster[]
   escalationMatrices EscalationMatrix[]
+  workExecutions WorkExecution[]
 }
 
 model Section {
@@ -298,6 +338,10 @@ model Subsection {
   cables               Cable[]
   socketTests          SocketTestingReport[]
   maintenanceSchedules MaintenanceSchedule[]
+  workDemands          WorkDemandEntry[]
+  workAllocations      WorkAllocationEntry[]
+  workProgressEntries  WorkProgressEntry[]
+  workScopes           WorkExecutionSubsectionScope[]
 }
 
 model Station {
@@ -320,6 +364,11 @@ model Station {
   failures     Failure[] // Link to failures at this station
   maintenances Maintenance[] // Link to maintenance at this station
   stationCircuits StationCircuit[]
+  workDemands    WorkDemandEntry[]
+  workAllocations WorkAllocationEntry[]
+  workProgressEntries WorkProgressEntry[]
+  workScopes          WorkExecutionStationScope[]
+  measuredCableTests  CableTestReport[]       @relation("CableTestMeasuredAtStation")
 
   // Explicit relations for block boundaries
   subsectionsFrom Subsection[] @relation("FromStationRelation")
@@ -329,6 +378,7 @@ model Station {
   createdBy    User     @relation("UserStations", fields: [createdById], references: [id])
   supervisorId String
   supervisor   User     @relation("StationSupervisor", fields: [supervisorId], references: [id])
+  supervisors  StationSupervisor[]
   createdAt    DateTime @default(now())
 }
 
@@ -344,6 +394,7 @@ model User {
   password            String
   role                UserRole              @default(VIEWER)
   designation         String
+  unit                String?
   divisionId          String
   division            Division              @relation(fields: [divisionId], references: [id])
   inchargeId          String?
@@ -370,7 +421,9 @@ model User {
   inspectionNotes              InspectionNote[]
   stations                     Station[]               @relation("UserStations")
   supervisedStations           Station[]               @relation("StationSupervisor")
+  stationSupervisorAssignments StationSupervisor[]     @relation("StationSupervisorAssignments")
   supervisedSubsections        Subsection[]            @relation("SubsectionSupervisor")
+  supervisedCables             Cable[]                 @relation("CableSupervisor")
   supervisedLocations          Location[]              @relation("LocationSupervisor")
   equipmentsCreated            Equipment[]             @relation("UserEquipments")
   maintenanceSchedules         MaintenanceSchedule[]   @relation("MaintenanceScheduleCreatedBy")
@@ -384,6 +437,14 @@ model User {
   requestedStationCircuits     StationCircuit[]        @relation("StationCircuitRequestedBy")
   approvedStationCircuits      StationCircuit[]        @relation("StationCircuitApprovedBy")
   createdEscalationMatrices    EscalationMatrix[]      @relation("EscalationMatrixCreatedBy")
+  createdWorkExecutions        WorkExecution[]         @relation("WorkExecutionCreatedBy")
+  consignedWorkExecutions      WorkExecution[]         @relation("WorkExecutionConsignee")
+  createdWorkDemandRounds      WorkDemandRound[]       @relation("WorkDemandRoundCreatedBy")
+  submittedWorkDemands         WorkDemandEntry[]       @relation("WorkDemandRequestedBy")
+  workProgressEntries          WorkProgressEntry[]     @relation("WorkProgressReportedBy")
+  workAllocationsGiven         WorkAllocationEntry[]   @relation("WorkAllocationAllocatedBy")
+  workAllocationsAssigned      WorkAllocationEntry[]   @relation("WorkAllocationAllocatedTo")
+  createdCableJoints           Joint[]                 @relation("CableJointCreatedBy")
   createdAt                    DateTime                @default(now())
   updatedAt                    DateTime                @updatedAt
 }
@@ -403,6 +464,189 @@ model EscalationMatrix {
 
   @@unique([divisionId, level])
   @@index([divisionId, isActive])
+}
+
+model WorkExecution {
+  id                     String              @id @default(uuid())
+  divisionId             String
+  division               Division            @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  loaNo                  String
+  loaDate                DateTime?
+  title                  String
+  description            String?
+  contractorName         String?
+  acceptedValue          Float?
+  completionPeriodMonths Int?
+  plannedStartDate       DateTime?
+  plannedEndDate         DateTime?
+  engineerIncharge       String?
+  status                 WorkExecutionStatus @default(DRAFT_ITEMS)
+  consigneeId            String
+  consignee              User                @relation("WorkExecutionConsignee", fields: [consigneeId], references: [id])
+  createdById            String
+  createdBy              User                @relation("WorkExecutionCreatedBy", fields: [createdById], references: [id])
+  items                  WorkExecutionItem[]
+  stationScopes          WorkExecutionStationScope[]
+  subsectionScopes       WorkExecutionSubsectionScope[]
+  demandRounds           WorkDemandRound[]
+  demands                WorkDemandEntry[]
+  progressEntries        WorkProgressEntry[]
+  allocations            WorkAllocationEntry[]
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  @@index([divisionId, status])
+  @@unique([divisionId, loaNo])
+}
+
+model WorkExecutionItem {
+  id             String           @id @default(uuid())
+  workId         String
+  work           WorkExecution    @relation(fields: [workId], references: [id], onDelete: Cascade)
+  lineNo         Int?
+  scheduleCode   String?
+  itemCode       String?
+  itemName       String
+  rawDescription String?
+  category       WorkItemCategory @default(OTHER)
+  uom            String
+  plannedQty     Float            @default(0)
+  unitRate       Float?
+  plannedAmount  Float?
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  demands        WorkDemandEntry[]
+  progressEntries WorkProgressEntry[]
+  allocations    WorkAllocationEntry[]
+
+  @@index([workId, isActive])
+}
+
+model WorkDemandRound {
+  id          String                @id @default(uuid())
+  workId      String
+  work        WorkExecution         @relation(fields: [workId], references: [id], onDelete: Cascade)
+  name        String
+  notes       String?
+  status      WorkDemandRoundStatus @default(OPEN)
+  opensAt     DateTime?             @default(now())
+  closesAt    DateTime?
+  createdById String
+  createdBy   User                  @relation("WorkDemandRoundCreatedBy", fields: [createdById], references: [id])
+  demands     WorkDemandEntry[]
+  progressEntries WorkProgressEntry[]
+  allocations WorkAllocationEntry[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([workId, status])
+}
+
+model WorkDemandEntry {
+  id            String          @id @default(uuid())
+  workId        String
+  work          WorkExecution   @relation(fields: [workId], references: [id], onDelete: Cascade)
+  roundId       String
+  round         WorkDemandRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          WorkExecutionItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  requestedById String
+  requestedBy   User            @relation("WorkDemandRequestedBy", fields: [requestedById], references: [id])
+  stationId     String?
+  station       Station?        @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  subsectionId  String?
+  subsection    Subsection?     @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
+  requestedQty  Float           @default(0)
+  remarks       String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([workId, roundId, requestedById])
+  @@index([itemId])
+  @@index([stationId])
+  @@index([subsectionId])
+}
+
+model WorkAllocationEntry {
+  id            String            @id @default(uuid())
+  workId        String
+  work          WorkExecution     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  roundId       String
+  round         WorkDemandRound   @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          WorkExecutionItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  allocatedToId String
+  allocatedTo   User              @relation("WorkAllocationAllocatedTo", fields: [allocatedToId], references: [id])
+  allocatedById String
+  allocatedBy   User              @relation("WorkAllocationAllocatedBy", fields: [allocatedById], references: [id])
+  stationId     String?
+  station       Station?          @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  subsectionId  String?
+  subsection    Subsection?       @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
+  allocatedQty  Float             @default(0)
+  remarks       String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([workId, roundId, allocatedToId])
+  @@index([itemId])
+  @@index([stationId])
+  @@index([subsectionId])
+}
+
+model WorkProgressEntry {
+  id                String            @id @default(uuid())
+  workId             String
+  work               WorkExecution     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  roundId            String?
+  round              WorkDemandRound?  @relation(fields: [roundId], references: [id], onDelete: SetNull)
+  itemId             String
+  item               WorkExecutionItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  reportedById       String
+  reportedBy         User              @relation("WorkProgressReportedBy", fields: [reportedById], references: [id])
+  stationId          String?
+  station            Station?          @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  subsectionId       String?
+  subsection         Subsection?       @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
+  quantity           Float             @default(0)
+  remarks            String?
+  linkedEquipmentId  String?
+  linkedEquipment    Equipment?        @relation(fields: [linkedEquipmentId], references: [id], onDelete: SetNull)
+  progressDate       DateTime          @default(now())
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([workId, itemId])
+  @@index([roundId])
+  @@index([reportedById])
+  @@index([stationId])
+  @@index([subsectionId])
+  @@index([linkedEquipmentId])
+}
+
+model WorkExecutionStationScope {
+  id        String        @id @default(uuid())
+  workId    String
+  work      WorkExecution @relation(fields: [workId], references: [id], onDelete: Cascade)
+  stationId String
+  station   Station       @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([workId, stationId])
+  @@index([stationId])
+}
+
+model WorkExecutionSubsectionScope {
+  id           String        @id @default(uuid())
+  workId       String
+  work         WorkExecution @relation(fields: [workId], references: [id], onDelete: Cascade)
+  subsectionId String
+  subsection   Subsection    @relation(fields: [subsectionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime      @default(now())
+
+  @@unique([workId, subsectionId])
+  @@index([subsectionId])
 }
 
 // -----------------------------------------------------------------------------
@@ -492,7 +736,7 @@ model Equipment {
   name                 String
   description          String
   providedBy           String
-  serialNumber         String?           @unique
+  serialNumber         String?
   templateId           String
   template             EquipmentTemplate @relation(fields: [templateId], references: [id])
   stationId            String
@@ -509,6 +753,7 @@ model Equipment {
   maintenances         Maintenance[]
   trcRequests          TRCRequest[]
   maintenanceSchedules MaintenanceSchedule[]
+  workProgressEntries  WorkProgressEntry[]
 
   // For Battery Sets: Every cell is an entry in the DB
   batteryCells BatteryCell[]
@@ -754,6 +999,8 @@ model Cable {
   // Geographic/Hierarchy Relations
   subsectionId String
   subsection   Subsection @relation(fields: [subsectionId], references: [id])
+  supervisorId String?
+  supervisor   User?      @relation("CableSupervisor", fields: [supervisorId], references: [id])
 
   // Child Asset Collections
   copperPairs  CopperPair[]
@@ -770,6 +1017,7 @@ model Cable {
   updatedAt DateTime @updatedAt
 
   @@index([subsectionId])
+  @@index([supervisorId])
 }
 
 model CableSideSegment {
@@ -820,6 +1068,7 @@ model EcSocket {
 
   // History of all tests performed on this specific socket
   testHistory EcTesting[]
+  joints      Joint[]
 
   createdAt DateTime @default(now())
 }
@@ -867,17 +1116,53 @@ model CableCut {
 }
 
 model CableTestReport {
-  id                String   @id @default(uuid())
-  cableId           String
-  cable             Cable    @relation(fields: [cableId], references: [id])
-  testedById        String
-  testedBy          User     @relation("Tester", fields: [testedById], references: [id])
-  testDate          DateTime @default(now())
-  insulationRes     String?
-  dbLoss            Float?
-  isAckByIncharge   Boolean  @default(false)
-  ackByInchargeById String?
-  ackByInchargeBy   User?    @relation("TestAck", fields: [ackByInchargeById], references: [id])
+  id                     String             @id @default(uuid())
+  cableId                String
+  cable                  Cable              @relation(fields: [cableId], references: [id])
+  testedById             String
+  testedBy               User               @relation("Tester", fields: [testedById], references: [id])
+  testDate               DateTime           @default(now())
+  measuredOn             DateTime?
+  testCause              CableTestingCause  @default(SCHEDULED)
+  sectionName            String?
+  blockSectionName       String?
+  cableRouteDistanceKm   Float?
+  sectionLengthKm        Float?
+  measuredAtStationId    String?
+  measuredAtStation      Station?           @relation("CableTestMeasuredAtStation", fields: [measuredAtStationId], references: [id])
+  calculatedLoopResistance Float?
+  calculatedAttenuation  Float?
+  insulationRes          String?
+  dbLoss                 Float?
+  overallRemarks         String?
+  isAckByIncharge        Boolean            @default(false)
+  ackByInchargeById      String?
+  ackByInchargeBy        User?              @relation("TestAck", fields: [ackByInchargeById], references: [id])
+  measuredValues         CableTestMeasuredValue[]
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([cableId, testDate])
+  @@index([measuredAtStationId])
+}
+
+model CableTestMeasuredValue {
+  id                 String          @id @default(uuid())
+  reportId           String
+  report             CableTestReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  srNo               Int
+  quadNo             Int?
+  pairNo             Int?
+  circuitName        String?
+  transmissionLossDb Float?
+  loopResistanceOhm  Float?
+  insulationL1E      Float?
+  insulationL2E      Float?
+  insulationL1L2     Float?
+  remarks            String?
+  createdAt          DateTime        @default(now())
+
+  @@index([reportId, srNo])
 }
 
 model SocketTestingReport {
@@ -892,12 +1177,26 @@ model SocketTestingReport {
 }
 
 model Joint {
-  id        String   @id @default(uuid())
-  location  String
-  cableId   String
-  cable     Cable    @relation(fields: [cableId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String         @id @default(uuid())
+  jointType    CableJointType @default(NORMAL)
+  locationKM   String?
+  coordinatesX String?
+  coordinatesY String?
+  jointKm      Float?
+  side         TrackSide?
+  jointDate    DateTime       @default(now())
+  remarks      String?
+  cableId      String
+  cable        Cable          @relation(fields: [cableId], references: [id])
+  ecSocketId   String?
+  ecSocket     EcSocket?      @relation(fields: [ecSocketId], references: [id])
+  createdById  String?
+  createdBy    User?          @relation("CableJointCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([cableId, jointDate])
+  @@index([ecSocketId])
 }
 
 model MaintenanceSchedule {
@@ -1034,6 +1333,18 @@ model Location {
   racks                Rack[]
 
   @@index([stationId])
+  @@index([supervisorId])
+}
+
+model StationSupervisor {
+  id           String   @id @default(uuid())
+  stationId    String
+  station      Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  supervisorId String
+  supervisor   User     @relation("StationSupervisorAssignments", fields: [supervisorId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@unique([stationId, supervisorId])
   @@index([supervisorId])
 }
 

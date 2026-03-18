@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma.js";
+import { buildStationVisibilityWhere } from "../lib/access-scope.js";
 
 const getStructuralCounts = (subType) => {
 	switch (subType) {
@@ -19,12 +20,11 @@ export const stationCableController = {
 	getByStation: async (req, res) => {
 		try {
 			const { stationId } = req.params;
-			const { divisionId, role } = req.user;
 
 			const station = await prisma.station.findFirst({
 				where: {
 					id: stationId,
-					...(role === "SUPER_ADMIN" ? {} : { divisionId }),
+					...buildStationVisibilityWhere(req),
 				},
 				select: { id: true },
 			});
@@ -59,7 +59,6 @@ export const stationCableController = {
 				fromLocationId,
 				toLocationId,
 			} = req.body;
-			const { divisionId, role } = req.user;
 
 			if (!type || !subType || !maintenanceBy || !length || !fromLocationId || !toLocationId) {
 				return res.status(400).json({
@@ -75,21 +74,25 @@ export const stationCableController = {
 				prisma.location.findFirst({
 					where: {
 						id: fromLocationId,
-						...(role === "SUPER_ADMIN" ? {} : { station: { divisionId } }),
+						station: {
+							...buildStationVisibilityWhere(req),
+						},
 					},
 					select: { id: true, stationId: true, station: { select: { divisionId: true } } },
 				}),
 				prisma.location.findFirst({
 					where: {
 						id: toLocationId,
-						...(role === "SUPER_ADMIN" ? {} : { station: { divisionId } }),
+						station: {
+							...buildStationVisibilityWhere(req),
+						},
 					},
 					select: { id: true, stationId: true, station: { select: { divisionId: true } } },
 				}),
 			]);
 
 			if (!fromLocation || !toLocation) {
-				return res.status(400).json({ message: "Invalid from/to location for your division." });
+				return res.status(400).json({ message: "Invalid from/to location for your access scope." });
 			}
 
 			if (fromLocation.stationId !== toLocation.stationId) {
@@ -129,6 +132,21 @@ export const stationCableController = {
 	delete: async (req, res) => {
 		try {
 			const { id } = req.params;
+			const existing = await prisma.stationCable.findFirst({
+				where: {
+					id,
+					fromLocation: {
+						station: {
+							...buildStationVisibilityWhere(req),
+						},
+					},
+				},
+				select: { id: true },
+			});
+			if (!existing) {
+				return res.status(403).json({ message: "Forbidden" });
+			}
+
 			await prisma.stationCable.delete({ where: { id } });
 			res.status(200).json({ message: "Station cable deleted." });
 		} catch (error) {

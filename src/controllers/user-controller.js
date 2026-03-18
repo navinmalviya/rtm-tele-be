@@ -16,6 +16,7 @@ const getAllUsers = async (req, res) => {
 				username: true,
 				email: true,
 				designation: true,
+				unit: true,
 				role: true,
 				inchargeId: true,
 				divisionId: true,

@@ -1,8 +1,25 @@
 import prisma from "../lib/prisma.js";
+import { buildSubsectionVisibilityWhere } from "../lib/access-scope.js";
 
 const QUAD_A_WIRE_COLORS = ["Orange", "Blue", "Brown", "Green", "Yellow", "Black"];
 const TUBE_COLORS = ["Blue", "Orange", "Green", "Brown", "Slate", "White"];
 const FIBER_COLORS = ["Blue", "Orange", "Green", "Natural"];
+const CABLE_SUPERVISOR_ROLES = [
+	"JE_SSE_TELE_SECTIONAL",
+	"SSE_TELE_INCHARGE",
+	"SSE_SNT_OFFICE",
+	"SSE_TECH",
+	"TCM",
+];
+const JOINT_TYPES = new Set(["NORMAL", "EC"]);
+const TRACK_SIDES = new Set(["UP", "DOWN"]);
+const TEST_CAUSES = new Set([
+	"SCHEDULED",
+	"FAILURE",
+	"POST_RESTORATION",
+	"COMMISSIONING",
+	"OTHER",
+]);
 
 const parseSideSegments = (sideSegments) => {
 	if (typeof sideSegments === "string") {
@@ -15,20 +32,48 @@ const parseSideSegments = (sideSegments) => {
 	return Array.isArray(sideSegments) ? sideSegments : [];
 };
 
+const parseNullableFloat = (value) => {
+	if (value === undefined || value === null || value === "") return null;
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseNullableDate = (value) => {
+	if (!value) return null;
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? null : date;
+};
+
 export const cableController = {
 	// 1) Get all subsection cables
 	getCablesBySubsection: async (req, res) => {
 		try {
 			const { subsectionId } = req.params;
-			const { divisionId, role } = req.user;
+			const subsectionScope = buildSubsectionVisibilityWhere(req);
 
 			const cables = await prisma.cable.findMany({
 				where: {
 					subsectionId,
-					...(role === "SUPER_ADMIN" ? {} : { subsection: { divisionId } }),
+					subsection: {
+						...subsectionScope,
+					},
 				},
 				include: {
 					sideSegments: true,
+					joints: {
+						select: {
+							id: true,
+							jointType: true,
+							jointKm: true,
+							locationKM: true,
+							side: true,
+							jointDate: true,
+						},
+						orderBy: { jointDate: "desc" },
+					},
+					supervisor: {
+						select: { id: true, name: true, designation: true, role: true },
+					},
 					_count: {
 						select: {
 							cuts: true,
@@ -51,15 +96,20 @@ export const cableController = {
 	getCableDetails: async (req, res) => {
 		try {
 			const { id } = req.params;
-			const { divisionId, role } = req.user;
+			const subsectionScope = buildSubsectionVisibilityWhere(req);
 			const cable = await prisma.cable.findFirst({
 				where: {
 					id,
-					...(role === "SUPER_ADMIN" ? {} : { subsection: { divisionId } }),
+					subsection: {
+						...subsectionScope,
+					},
 				},
 				include: {
 					subsection: {
 						select: { id: true, code: true, name: true, startKm: true, endKm: true },
+					},
+					supervisor: {
+						select: { id: true, name: true, designation: true, role: true },
 					},
 					copperPairs: {
 						orderBy: [{ quadNo: "asc" }, { pairNo: "asc" }],
@@ -96,7 +146,28 @@ export const cableController = {
 						include: { reportedBy: { select: { name: true } } },
 					},
 					joints: {
-						orderBy: { id: "desc" },
+						orderBy: { jointDate: "desc" },
+						include: {
+							ecSocket: { select: { id: true, poleKm: true } },
+							createdBy: { select: { id: true, name: true, designation: true } },
+						},
+					},
+					testReports: {
+						orderBy: { testDate: "desc" },
+						include: {
+							testedBy: {
+								select: { id: true, name: true, designation: true, role: true },
+							},
+							measuredAtStation: {
+								select: { id: true, name: true, code: true },
+							},
+							ackByInchargeBy: {
+								select: { id: true, name: true, designation: true },
+							},
+							measuredValues: {
+								orderBy: { srNo: "asc" },
+							},
+						},
 					},
 				},
 			});
@@ -165,7 +236,251 @@ export const cableController = {
 		}
 	},
 
-	// 4) Connect pair/fiber to equipment
+	// 4) Add cable joint / EC joint
+	createJoint: async (req, res) => {
+		try {
+			const { id } = req.params;
+			const {
+				jointType = "NORMAL",
+				jointKm,
+				locationKM,
+				side,
+				jointDate,
+				remarks,
+				coordinatesX,
+				coordinatesY,
+				ecSocketId,
+			} = req.body;
+			const { divisionId, role, id: userId } = req.user;
+
+			if (!JOINT_TYPES.has(jointType)) {
+				return res.status(400).json({ message: "Invalid joint type. Use NORMAL or EC." });
+			}
+
+			if (side && !TRACK_SIDES.has(side)) {
+				return res.status(400).json({ message: "Invalid side. Use UP or DOWN." });
+			}
+
+			const cable = await prisma.cable.findFirst({
+				where: {
+					id,
+					...(role === "SUPER_ADMIN" ? {} : { subsection: { divisionId } }),
+				},
+				include: {
+					subsection: { select: { startKm: true, endKm: true } },
+				},
+			});
+
+			if (!cable) {
+				return res.status(404).json({ message: "Cable not found." });
+			}
+
+			const parsedJointKm =
+				jointKm !== undefined && jointKm !== null && jointKm !== ""
+					? Number.parseFloat(jointKm)
+					: null;
+			if (parsedJointKm !== null && !Number.isFinite(parsedJointKm)) {
+				return res.status(400).json({ message: "jointKm must be a valid number." });
+			}
+
+			const rangeStart = cable.subsection?.startKm;
+			const rangeEnd = cable.subsection?.endKm;
+			if (
+				parsedJointKm !== null &&
+				rangeStart !== null &&
+				rangeStart !== undefined &&
+				rangeEnd !== null &&
+				rangeEnd !== undefined &&
+				(parsedJointKm < rangeStart || parsedJointKm > rangeEnd)
+			) {
+				return res.status(400).json({
+					message: `Joint KM must be within subsection range ${rangeStart}-${rangeEnd}.`,
+				});
+			}
+
+			if (jointType === "EC" && !ecSocketId) {
+				return res.status(400).json({ message: "ecSocketId is required for EC joint." });
+			}
+
+			if (ecSocketId) {
+				const socket = await prisma.ecSocket.findFirst({
+					where: { id: ecSocketId, cableId: id },
+					select: { id: true, poleKm: true },
+				});
+				if (!socket) {
+					return res.status(400).json({ message: "Invalid EC socket for selected cable." });
+				}
+			}
+
+			const created = await prisma.joint.create({
+				data: {
+					cableId: id,
+					jointType,
+					jointKm: parsedJointKm,
+					locationKM:
+						locationKM && String(locationKM).trim()
+							? String(locationKM).trim()
+							: parsedJointKm !== null
+								? `KM ${parsedJointKm}`
+								: null,
+					side: side || null,
+					jointDate: jointDate ? new Date(jointDate) : new Date(),
+					remarks: remarks ? String(remarks).trim() : null,
+					coordinatesX: coordinatesX ? String(coordinatesX).trim() : null,
+					coordinatesY: coordinatesY ? String(coordinatesY).trim() : null,
+					ecSocketId: ecSocketId || null,
+					createdById: userId || null,
+				},
+				include: {
+					ecSocket: { select: { id: true, poleKm: true } },
+					createdBy: { select: { id: true, name: true, designation: true } },
+				},
+			});
+
+			return res.status(201).json(created);
+		} catch (error) {
+			return res.status(500).json({ error: error.message });
+		}
+	},
+
+	// 5) Add cable testing report
+	createCableTestReport: async (req, res) => {
+		try {
+			const { id } = req.params;
+			const subsectionScope = buildSubsectionVisibilityWhere(req);
+			const { divisionId, role, id: testedById } = req.user;
+			const {
+				testDate,
+				measuredOn,
+				testCause,
+				sectionName,
+				blockSectionName,
+				cableRouteDistanceKm,
+				sectionLengthKm,
+				measuredAtStationId,
+				calculatedLoopResistance,
+				calculatedAttenuation,
+				insulationRes,
+				dbLoss,
+				overallRemarks,
+				measuredValues,
+			} = req.body;
+
+			const cable = await prisma.cable.findFirst({
+				where: {
+					id,
+					subsection: {
+						...subsectionScope,
+					},
+				},
+				select: { id: true },
+			});
+			if (!cable) {
+				return res.status(404).json({ message: "Cable not found." });
+			}
+
+			const resolvedCause = testCause || "SCHEDULED";
+			if (!TEST_CAUSES.has(resolvedCause)) {
+				return res.status(400).json({
+					message: "Invalid testCause. Use SCHEDULED, FAILURE, POST_RESTORATION, COMMISSIONING or OTHER.",
+				});
+			}
+
+			if (measuredAtStationId) {
+				const station = await prisma.station.findFirst({
+					where: {
+						id: measuredAtStationId,
+						...(role === "SUPER_ADMIN" ? {} : { divisionId }),
+					},
+					select: { id: true },
+				});
+				if (!station) {
+					return res.status(400).json({ message: "Invalid measured-at station." });
+				}
+			}
+
+			const rows = Array.isArray(measuredValues) ? measuredValues : [];
+			if (rows.length > 200) {
+				return res.status(400).json({ message: "Too many measured rows in one test report." });
+			}
+
+			const parsedRows = rows
+				.map((row, index) => ({
+					srNo: Number.parseInt(row?.srNo ?? index + 1, 10),
+					quadNo:
+						row?.quadNo === undefined || row?.quadNo === null || row?.quadNo === ""
+							? null
+							: Number.parseInt(row.quadNo, 10),
+					pairNo:
+						row?.pairNo === undefined || row?.pairNo === null || row?.pairNo === ""
+							? null
+							: Number.parseInt(row.pairNo, 10),
+					circuitName: row?.circuitName ? String(row.circuitName).trim() : null,
+					transmissionLossDb: parseNullableFloat(row?.transmissionLossDb),
+					loopResistanceOhm: parseNullableFloat(row?.loopResistanceOhm),
+					insulationL1E: parseNullableFloat(row?.insulationL1E),
+					insulationL2E: parseNullableFloat(row?.insulationL2E),
+					insulationL1L2: parseNullableFloat(row?.insulationL1L2),
+					remarks: row?.remarks ? String(row.remarks).trim() : null,
+				}))
+				.filter((row) => Number.isFinite(row.srNo));
+
+			const report = await prisma.$transaction(async (tx) => {
+				const createdReport = await tx.cableTestReport.create({
+					data: {
+						cableId: id,
+						testedById,
+						testDate: parseNullableDate(testDate) || new Date(),
+						measuredOn: parseNullableDate(measuredOn),
+						testCause: resolvedCause,
+						sectionName: sectionName ? String(sectionName).trim() : null,
+						blockSectionName: blockSectionName ? String(blockSectionName).trim() : null,
+						cableRouteDistanceKm: parseNullableFloat(cableRouteDistanceKm),
+						sectionLengthKm: parseNullableFloat(sectionLengthKm),
+						measuredAtStationId: measuredAtStationId || null,
+						calculatedLoopResistance: parseNullableFloat(calculatedLoopResistance),
+						calculatedAttenuation: parseNullableFloat(calculatedAttenuation),
+						insulationRes: insulationRes ? String(insulationRes).trim() : null,
+						dbLoss: parseNullableFloat(dbLoss),
+						overallRemarks: overallRemarks ? String(overallRemarks).trim() : null,
+					},
+				});
+
+				if (parsedRows.length) {
+					await tx.cableTestMeasuredValue.createMany({
+						data: parsedRows.map((row) => ({
+							reportId: createdReport.id,
+							...row,
+						})),
+					});
+				}
+
+				return tx.cableTestReport.findUnique({
+					where: { id: createdReport.id },
+					include: {
+						testedBy: {
+							select: { id: true, name: true, designation: true, role: true },
+						},
+						measuredAtStation: {
+							select: { id: true, name: true, code: true },
+						},
+						ackByInchargeBy: {
+							select: { id: true, name: true, designation: true },
+						},
+						measuredValues: {
+							orderBy: { srNo: "asc" },
+						},
+					},
+				});
+			});
+
+			return res.status(201).json(report);
+		} catch (error) {
+			return res.status(500).json({ error: error.message });
+		}
+	},
+
+	// 6) Connect pair/fiber to equipment
 	connectMediaToEquipment: async (req, res) => {
 		try {
 			const { mediaType, mediaId, equipmentId, circuitIdString, description } = req.body;
@@ -197,7 +512,7 @@ export const cableController = {
 		}
 	},
 
-	// 5) Create subsection cable + generate media
+	// 7) Create subsection cable + generate media
 	createCable: async (req, res) => {
 		try {
 			const {
@@ -208,6 +523,7 @@ export const cableController = {
 				length,
 				dateOfCommissioning,
 				side,
+				supervisorId,
 				quadCount,
 				pairCount,
 				fiberCount,
@@ -225,10 +541,26 @@ export const cableController = {
 					id: subsectionId,
 					...(role === "SUPER_ADMIN" ? {} : { divisionId }),
 				},
-				select: { startKm: true, endKm: true },
+				select: { startKm: true, endKm: true, supervisorId: true, divisionId: true },
 			});
 			if (!subsection) {
 				return res.status(400).json({ message: "Invalid subsection for your division." });
+			}
+			const resolvedSupervisorId = supervisorId || subsection.supervisorId;
+			if (resolvedSupervisorId) {
+				const validSupervisor = await prisma.user.findFirst({
+					where: {
+						id: resolvedSupervisorId,
+						role: { in: CABLE_SUPERVISOR_ROLES },
+						...(role === "SUPER_ADMIN" ? {} : { divisionId: subsection.divisionId }),
+					},
+					select: { id: true },
+				});
+				if (!validSupervisor) {
+					return res.status(400).json({
+						message: "Invalid cable supervisor. Select JE/SSE/TCM supervisor from your division.",
+					});
+				}
 			}
 
 			const parsedSegments = parseSideSegments(sideSegments);
@@ -258,6 +590,7 @@ export const cableController = {
 						subType,
 						maintenanceBy,
 						subsectionId,
+						supervisorId: resolvedSupervisorId,
 						length,
 						dateOfCommissioning: dateOfCommissioning ? new Date(dateOfCommissioning) : null,
 						side: side || "UP",
@@ -345,17 +678,50 @@ export const cableController = {
 		}
 	},
 
-	// 6) Update subsection cable metadata
+	// 8) Update subsection cable metadata
 	updateCable: async (req, res) => {
 		try {
 			const { id } = req.params;
-			const { maintenanceBy, length, side, dateOfCommissioning } = req.body;
+			const { divisionId, role } = req.user;
+			const { maintenanceBy, length, side, dateOfCommissioning, supervisorId } = req.body;
+			const existingCable = await prisma.cable.findFirst({
+				where: {
+					id,
+					...(role === "SUPER_ADMIN" ? {} : { subsection: { divisionId } }),
+				},
+				select: {
+					id: true,
+					subsection: { select: { divisionId: true } },
+				},
+			});
+			if (!existingCable) {
+				return res.status(404).json({ message: "Cable not found" });
+			}
+
+			if (supervisorId) {
+				const validSupervisor = await prisma.user.findFirst({
+					where: {
+						id: supervisorId,
+						role: { in: CABLE_SUPERVISOR_ROLES },
+						...(role === "SUPER_ADMIN"
+							? {}
+							: { divisionId: existingCable.subsection.divisionId }),
+					},
+					select: { id: true },
+				});
+				if (!validSupervisor) {
+					return res.status(400).json({
+						message: "Invalid cable supervisor. Select JE/SSE/TCM supervisor from your division.",
+					});
+				}
+			}
 			const updated = await prisma.cable.update({
 				where: { id },
 				data: {
 					maintenanceBy,
 					length,
 					side,
+					supervisorId: supervisorId !== undefined ? supervisorId || null : undefined,
 					dateOfCommissioning: dateOfCommissioning ? new Date(dateOfCommissioning) : undefined,
 				},
 			});
@@ -365,7 +731,7 @@ export const cableController = {
 		}
 	},
 
-	// 7) Delete subsection cable
+	// 9) Delete subsection cable
 	deleteCable: async (req, res) => {
 		try {
 			const { id } = req.params;

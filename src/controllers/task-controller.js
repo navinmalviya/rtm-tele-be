@@ -1,4 +1,11 @@
 import prisma from "../lib/prisma";
+import {
+	buildStationVisibilityWhere,
+	buildSubsectionVisibilityWhere,
+	buildTaskVisibilityOr,
+	isFieldScopedRole,
+	isSuperAdmin,
+} from "../lib/access-scope.js";
 
 const appendTaskHistory = async (db, { taskId, actorId, action, fromValue, toValue, details }) => {
 	return db.taskHistory.create({
@@ -17,6 +24,28 @@ const parseBoolean = (value, fallback = undefined) => {
 	if (value === true || value === "true" || value === 1 || value === "1") return true;
 	if (value === false || value === "false" || value === 0 || value === "0") return false;
 	return fallback;
+};
+
+const getScopedStationAndSubsectionIds = async (req) => {
+	if (!isFieldScopedRole(req)) {
+		return { stationIds: [], subsectionIds: [] };
+	}
+
+	const [stations, subsections] = await Promise.all([
+		prisma.station.findMany({
+			where: buildStationVisibilityWhere(req),
+			select: { id: true },
+		}),
+		prisma.subsection.findMany({
+			where: buildSubsectionVisibilityWhere(req),
+			select: { id: true },
+		}),
+	]);
+
+	return {
+		stationIds: stations.map((row) => row.id),
+		subsectionIds: subsections.map((row) => row.id),
+	};
 };
 
 /**
@@ -239,16 +268,41 @@ export const getTasks = async (req, res) => {
 	const { projectId, stationId } = req.query;
 
 	try {
+		const where = {
+			projectId: projectId || undefined,
+			OR: stationId
+				? [
+						{ failure: { location: { stationId } } },
+						{ failure: { stationId } },
+						{ maintenance: { location: { stationId } } },
+						{ maintenance: { stationId } },
+					]
+				: undefined,
+		};
+
+		if (!isSuperAdmin(req)) {
+			where.AND = [
+				...(where.AND || []),
+				{
+					owner: {
+						divisionId: req.user.divisionId,
+					},
+				},
+			];
+		}
+
+		if (isFieldScopedRole(req)) {
+			const { stationIds, subsectionIds } = await getScopedStationAndSubsectionIds(req);
+			const fieldVisibility = buildTaskVisibilityOr({
+				req,
+				stationIds,
+				subsectionIds,
+			});
+			where.AND = [...(where.AND || []), { OR: fieldVisibility }];
+		}
+
 		const tasks = await prisma.task.findMany({
-			where: {
-				projectId: projectId || undefined,
-				OR: stationId
-					? [
-							{ failure: { location: { stationId } } },
-							{ maintenance: { location: { stationId } } },
-						]
-					: undefined,
-			},
+			where,
 			include: {
 				owner: { select: { name: true, username: true } },
 				assignedTo: { select: { name: true, username: true } },
@@ -275,10 +329,17 @@ export const getTaskById = async (req, res) => {
 	const { id } = req.params;
 
 	try {
+		const { stationIds, subsectionIds } = await getScopedStationAndSubsectionIds(req);
+		const fieldVisibility = buildTaskVisibilityOr({
+			req,
+			stationIds,
+			subsectionIds,
+		});
+
 		const task = await prisma.task.findUnique({
 			where: { id },
 			include: {
-				owner: { select: { name: true, username: true } },
+				owner: { select: { id: true, name: true, username: true, divisionId: true } },
 				assignedTo: { select: { name: true, username: true } },
 				failure: {
 					include: { location: true, cableCut: true, station: true },
@@ -299,6 +360,44 @@ export const getTaskById = async (req, res) => {
 
 		if (!task) {
 			return res.status(404).json({ message: "Task not found" });
+		}
+
+		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (isFieldScopedRole(req)) {
+			const inScope = fieldVisibility.some((clause) => {
+				if (clause.assignedToId) return clause.assignedToId === task.assignedToId;
+				if (clause.ownerId) return clause.ownerId === task.ownerId;
+				if (clause.failure?.stationId?.in?.length) {
+					return clause.failure.stationId.in.includes(task.failure?.stationId);
+				}
+				if (clause.failure?.location?.stationId?.in?.length) {
+					return clause.failure.location.stationId.in.includes(task.failure?.location?.stationId);
+				}
+				if (clause.maintenance?.stationId?.in?.length) {
+					return clause.maintenance.stationId.in.includes(task.maintenance?.stationId);
+				}
+				if (clause.maintenance?.location?.stationId?.in?.length) {
+					return clause.maintenance.location.stationId.in.includes(
+						task.maintenance?.location?.stationId,
+					);
+				}
+				if (clause.trcRequest?.equipment?.stationId?.in?.length) {
+					return clause.trcRequest.equipment.stationId.in.includes(
+						task.trcRequest?.equipment?.stationId,
+					);
+				}
+				if (clause.maintenance?.subsectionId?.in?.length) {
+					return clause.maintenance.subsectionId.in.includes(task.maintenance?.subsectionId);
+				}
+				return false;
+			});
+
+			if (!inScope) {
+				return res.status(403).json({ message: "Forbidden" });
+			}
 		}
 
 		res.status(200).json(task);

@@ -42,6 +42,22 @@ router.post(
 	cableController.createEcSocket,
 );
 
+// Add cable joint / EC joint
+router.post(
+	"/:id/joint",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	cableController.createJoint,
+);
+
+// Add cable test report (scheduled / failure testing)
+router.post(
+	"/:id/test-report",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	cableController.createCableTestReport,
+);
+
 // Connect a pair/fiber to an equipment via a new circuit
 router.post(
 	"/connect-media",

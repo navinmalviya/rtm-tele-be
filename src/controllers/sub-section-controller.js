@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { buildSubsectionVisibilityWhere } from "../lib/access-scope.js";
 
 // 1. CREATE Sub-section (Connects two stations)
 const createSubSection = async (req, res) => {
@@ -79,11 +80,9 @@ const createSubSection = async (req, res) => {
 
 // 2. GET ALL Sub-sections (Filtered by Division)
 const findAllSubSections = async (req, res) => {
-	const { divisionId, role } = req.user;
-
 	try {
 		const queryOptions = {
-			where: role === "SUPER_ADMIN" ? {} : { divisionId },
+			where: buildSubsectionVisibilityWhere(req),
 			include: {
 				fromStation: { select: { name: true, code: true } },
 				toStation: { select: { name: true, code: true } },
@@ -158,9 +157,89 @@ const deleteSubSection = async (req, res) => {
 			return res.status(403).json({ message: "Forbidden" });
 		}
 
-		await prisma.subsection.delete({ where: { id } });
+		await prisma.$transaction(async (tx) => {
+			const uniqueIds = (values = []) => [...new Set(values.filter(Boolean))];
+
+			const cables = await tx.cable.findMany({
+				where: { subsectionId: id },
+				select: { id: true },
+			});
+			const cableIds = uniqueIds(cables.map((row) => row.id));
+
+			if (cableIds.length > 0) {
+				const cableCuts = await tx.cableCut.findMany({
+					where: { cableId: { in: cableIds } },
+					select: { id: true },
+				});
+				const cableCutIds = uniqueIds(cableCuts.map((row) => row.id));
+
+				if (cableCutIds.length > 0) {
+					const cableFailures = await tx.failure.findMany({
+						where: { cableCutId: { in: cableCutIds } },
+						select: { id: true, taskId: true },
+					});
+					const failureIds = uniqueIds(cableFailures.map((row) => row.id));
+					const failureTaskIds = uniqueIds(cableFailures.map((row) => row.taskId));
+
+					if (failureIds.length > 0) {
+						await tx.failure.deleteMany({
+							where: { id: { in: failureIds } },
+						});
+					}
+
+					if (failureTaskIds.length > 0) {
+						await tx.task.deleteMany({
+							where: { id: { in: failureTaskIds } },
+						});
+					}
+				}
+
+				await tx.cableTestReport.deleteMany({
+					where: { cableId: { in: cableIds } },
+				});
+				await tx.joint.deleteMany({
+					where: { cableId: { in: cableIds } },
+				});
+				await tx.cableCut.deleteMany({
+					where: { cableId: { in: cableIds } },
+				});
+				await tx.cable.deleteMany({
+					where: { id: { in: cableIds } },
+				});
+			}
+
+			await tx.socketTestingReport.deleteMany({
+				where: { subsectionId: id },
+			});
+
+			await tx.maintenanceSchedule.deleteMany({
+				where: { subsectionId: id },
+			});
+
+			await tx.workDemandEntry.deleteMany({
+				where: { subsectionId: id },
+			});
+			await tx.workAllocationEntry.deleteMany({
+				where: { subsectionId: id },
+			});
+			await tx.workProgressEntry.deleteMany({
+				where: { subsectionId: id },
+			});
+			await tx.workExecutionSubsectionScope.deleteMany({
+				where: { subsectionId: id },
+			});
+
+			await tx.subsection.delete({ where: { id } });
+		});
+
 		res.status(200).json({ message: "Sub-section deleted successfully!" });
 	} catch (error) {
+		if (error.code === "P2003") {
+			return res.status(400).json({
+				message:
+					"Sub-section deletion blocked by linked records that could not be auto-cleaned.",
+			});
+		}
 		res.status(500).json({ error: error.message });
 	}
 };
@@ -168,13 +247,13 @@ const deleteSubSection = async (req, res) => {
 // 5. GET Sub-section Details (Used for connectivity analysis)
 const getSubSectionDetails = async (req, res) => {
 	const { id } = req.params;
-	const { divisionId, role } = req.user;
+	const subsectionScope = buildSubsectionVisibilityWhere(req);
 
 	try {
 		const details = await prisma.subsection.findFirst({
 			where: {
 				id,
-				divisionId: role === "SUPER_ADMIN" ? undefined : divisionId,
+				...subsectionScope,
 			},
 			include: {
 				fromStation: true,

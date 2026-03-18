@@ -1,4 +1,30 @@
 import prisma from "../lib/prisma.js";
+import { buildStationVisibilityWhere } from "../lib/access-scope.js";
+
+const getScopedStation = async (req, stationId) =>
+	prisma.station.findFirst({
+		where: {
+			id: stationId,
+			...buildStationVisibilityWhere(req),
+		},
+		select: { id: true, divisionId: true },
+	});
+
+const getScopedEquipment = async (req, equipmentId) =>
+	prisma.equipment.findFirst({
+		where: {
+			id: equipmentId,
+			station: {
+				...buildStationVisibilityWhere(req),
+			},
+		},
+		select: {
+			id: true,
+			stationId: true,
+			station: { select: { divisionId: true } },
+			_count: { select: { trcRequests: true } },
+		},
+	});
 
 /**
  * 1. CREATE EQUIPMENT
@@ -20,6 +46,24 @@ export const createEquipment = async (req, res) => {
 		} = req.body;
 
 		const userId = req.user.id;
+
+		const station = await getScopedStation(req, stationId);
+		if (!station) {
+			return res.status(403).json({ error: "Forbidden" });
+		}
+
+		if (rackId) {
+			const rack = await prisma.rack.findFirst({
+				where: {
+					id: rackId,
+					location: { stationId },
+				},
+				select: { id: true },
+			});
+			if (!rack) {
+				return res.status(400).json({ error: "Invalid rack for selected station." });
+			}
+		}
 
 		// 1. Fetch Template FIRST to verify it exists and has port configs
 		const template = await prisma.equipmentTemplate.findUnique({
@@ -104,6 +148,11 @@ export const createEquipment = async (req, res) => {
 export const findEquipmentByStation = async (req, res) => {
 	try {
 		const { stationId } = req.params;
+		const station = await getScopedStation(req, stationId);
+		if (!station) {
+			return res.status(403).json({ error: "Forbidden" });
+		}
+
 		const equipment = await prisma.equipment.findMany({
 			where: { stationId },
 			include: {
@@ -129,16 +178,12 @@ export const findEquipmentByStation = async (req, res) => {
  */
 export const findAllEquipment = async (req, res) => {
 	try {
-		const { divisionId, role } = req.user;
 		const equipment = await prisma.equipment.findMany({
-			where:
-				role === "SUPER_ADMIN"
-					? {}
-					: {
-							station: {
-								divisionId,
-							},
-					  },
+			where: {
+				station: {
+					...buildStationVisibilityWhere(req),
+				},
+			},
 			include: {
 				template: true,
 				station: { select: { name: true, code: true } },
@@ -159,6 +204,11 @@ export const findAllEquipment = async (req, res) => {
 export const updateEquipment = async (req, res) => {
 	try {
 		const { id } = req.params;
+		const existing = await getScopedEquipment(req, id);
+		if (!existing) {
+			return res.status(403).json({ error: "Forbidden" });
+		}
+
 		const updateData = { ...req.body };
 
 		// Ensure numeric fields are correctly cast if they are being updated
@@ -184,6 +234,27 @@ export const updateEquipment = async (req, res) => {
 			);
 		}
 
+		if (updateData.stationId) {
+			const targetStation = await getScopedStation(req, updateData.stationId);
+			if (!targetStation) {
+				return res.status(403).json({ error: "Forbidden target station." });
+			}
+		}
+
+		if (updateData.rackId) {
+			const stationForRack = updateData.stationId || existing.stationId;
+			const rack = await prisma.rack.findFirst({
+				where: {
+					id: updateData.rackId,
+					location: { stationId: stationForRack },
+				},
+				select: { id: true },
+			});
+			if (!rack) {
+				return res.status(400).json({ error: "Invalid rack for selected station." });
+			}
+		}
+
 		const updated = await prisma.equipment.update({
 			where: { id },
 			data: updateData,
@@ -202,6 +273,23 @@ export const updateEquipment = async (req, res) => {
 export const bulkUpdateEquipment = async (req, res) => {
 	try {
 		const { updates } = req.body; // Array of { id, mapX, mapY }
+		const ids = (updates || []).map((u) => u.id).filter(Boolean);
+		if (!ids.length) {
+			return res.status(400).json({ error: "No equipment updates provided." });
+		}
+
+		const allowedRows = await prisma.equipment.findMany({
+			where: {
+				id: { in: ids },
+				station: {
+					...buildStationVisibilityWhere(req),
+				},
+			},
+			select: { id: true },
+		});
+		if (allowedRows.length !== ids.length) {
+			return res.status(403).json({ error: "Forbidden" });
+		}
 
 		const transactions = updates.map((u) => {
 			const { id, ...data } = u;
@@ -228,9 +316,27 @@ export const bulkUpdateEquipment = async (req, res) => {
 export const deleteEquipment = async (req, res) => {
 	try {
 		const { id } = req.params;
+		const equipment = await getScopedEquipment(req, id);
+
+		if (!equipment) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if ((equipment._count?.trcRequests || 0) > 0) {
+			return res.status(400).json({
+				message: `Cannot delete equipment linked with ${equipment._count.trcRequests} TRC request(s). Remove or close linked TRC request first.`,
+			});
+		}
+
 		await prisma.equipment.delete({ where: { id } });
 		res.status(204).send();
 	} catch (error) {
+		if (error.code === "P2003") {
+			return res.status(400).json({
+				message:
+					"Cannot delete equipment because linked dependent records exist (TRC/work progress/maintenance).",
+			});
+		}
 		res.status(500).json({ error: error.message });
 	}
 };

@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { buildStationVisibilityWhere } from "../lib/access-scope.js";
 
 export const createPortLink = async (req, res) => {
 	try {
@@ -45,6 +46,7 @@ export const createPortLink = async (req, res) => {
 export const getLinkDetails = async (req, res) => {
 	try {
 		const { id } = req.params;
+		const stationScope = buildStationVisibilityWhere(req);
 
 		const link = await prisma.portLink.findUnique({
 			where: { id },
@@ -64,6 +66,21 @@ export const getLinkDetails = async (req, res) => {
 
 		if (!link) {
 			return res.status(404).json({ error: "Port link not found." });
+		}
+
+		const sourceStationId = link.source?.equipment?.stationId;
+		const targetStationId = link.target?.equipment?.stationId;
+		if (sourceStationId || targetStationId) {
+			const allowedStations = await prisma.station.findMany({
+				where: {
+					...stationScope,
+					id: { in: [sourceStationId, targetStationId].filter(Boolean) },
+				},
+				select: { id: true },
+			});
+			if (allowedStations.length !== [sourceStationId, targetStationId].filter(Boolean).length) {
+				return res.status(403).json({ error: "Forbidden" });
+			}
 		}
 
 		res.status(200).json(link);
@@ -128,6 +145,18 @@ export const deletePortLink = async (req, res) => {
 export const getStationLinks = async (req, res) => {
 	try {
 		const { stationId } = req.params;
+		const stationScope = buildStationVisibilityWhere(req);
+
+		const station = await prisma.station.findFirst({
+			where: {
+				id: stationId,
+				...stationScope,
+			},
+			select: { id: true },
+		});
+		if (!station) {
+			return res.status(403).json({ error: "Forbidden" });
+		}
 
 		// Fetch all links where the source port belongs to an equipment in the station
 		const links = await prisma.portLink.findMany({
@@ -153,6 +182,18 @@ export const getStationLinks = async (req, res) => {
 export const getAvailablePortsByStation = async (req, res) => {
 	try {
 		const { stationId } = req.params;
+		const stationScope = buildStationVisibilityWhere(req);
+
+		const station = await prisma.station.findFirst({
+			where: {
+				id: stationId,
+				...stationScope,
+			},
+			select: { id: true },
+		});
+		if (!station) {
+			return res.status(403).json({ error: "Forbidden" });
+		}
 
 		// Using your schema's specific relation names: linkAsSource and linkAsTarget
 		const availablePorts = await prisma.port.findMany({
@@ -193,7 +234,12 @@ export const getAvailablePortsByStation = async (req, res) => {
 
 export const getAllLinks = async (req, res) => {
 	try {
+		const stationScope = buildStationVisibilityWhere(req);
 		const links = await prisma.portLink.findMany({
+			where: {
+				source: { equipment: { station: { ...stationScope } } },
+				target: { equipment: { station: { ...stationScope } } },
+			},
 			include: {
 				source: {
 					select: {

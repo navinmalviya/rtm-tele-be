@@ -1,6 +1,20 @@
 import prisma from "../lib/prisma.js";
 
-const ENGINEER_ROLES = new Set(["JE_SSE_TELE_SECTIONAL", "SSE_TELE_INCHARGE"]);
+const ENGINEER_ROLES = new Set([
+	"JE_SSE_TELE_SECTIONAL",
+	"SSE_TELE_INCHARGE",
+	"SSE_SNT_OFFICE",
+	"SSE_TECH",
+	"TCM",
+]);
+
+// Backward-compatibility for legacy JWT role values.
+const ENGINEER_REQUEST_ROLES = new Set([
+	...ENGINEER_ROLES,
+	"FIELD_ENGINEER",
+	"JE_SECTIONAL",
+	"SSE_SECTIONAL",
+]);
 const APPROVER_ROLES = new Set(["TESTROOM", "ADMIN", "SUPER_ADMIN"]);
 const FIELD_TYPES = new Set(["TEXT", "NUMBER", "BOOLEAN", "SELECT"]);
 
@@ -370,11 +384,13 @@ export const createStationCircuit = async (req, res) => {
 		}
 
 		const isApprover = APPROVER_ROLES.has(role);
-		const isEngineer = ENGINEER_ROLES.has(role);
+		const isEngineer = ENGINEER_REQUEST_ROLES.has(role);
 		if (!isApprover && !isEngineer) {
 			return res
 				.status(403)
-				.json({ message: "Only JE/SSE or Testroom/Admin can add circuits." });
+				.json({
+					message: "Only JE/SSE/TCM or Testroom/Admin can add circuits.",
+				});
 		}
 
 		let resolvedMaintainedById = maintainedById || userId;
@@ -400,7 +416,7 @@ export const createStationCircuit = async (req, res) => {
 		);
 		if (!validMaintainer) {
 			return res.status(400).json({
-				message: "maintainedBy must be a JE/SSE user in this division.",
+				message: "maintainedBy must be a JE/SSE/TCM user in this division.",
 			});
 		}
 
@@ -489,7 +505,7 @@ export const approveStationCircuit = async (req, res) => {
 		);
 		if (!validMaintainer) {
 			return res.status(400).json({
-				message: "maintainedBy must be a JE/SSE user in this division.",
+				message: "maintainedBy must be a JE/SSE/TCM user in this division.",
 			});
 		}
 

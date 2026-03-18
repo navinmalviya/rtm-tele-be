@@ -2,11 +2,42 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
 
+const OPTIONAL_REPORTING_ROLES = new Set(["SR_DSTE"]);
+const ADMIN_ROLES = new Set(["SUPER_ADMIN", "ADMIN"]);
+const REPORTING_ALLOWED_BY_ROLE = {
+	DSTE: ["SR_DSTE", "ADMIN", "SUPER_ADMIN"],
+	ADSTE: ["DSTE", "SR_DSTE", "ADMIN", "SUPER_ADMIN"],
+	TESTROOM: ["ADSTE", "DSTE", "SR_DSTE", "ADMIN", "SUPER_ADMIN"],
+	SSE_TELE_INCHARGE: ["ADSTE", "DSTE", "SR_DSTE"],
+	JE_SSE_TELE_SECTIONAL: ["SSE_TELE_INCHARGE", "ADSTE"],
+	TCM: ["JE_SSE_TELE_SECTIONAL", "SSE_TELE_INCHARGE"],
+	TECHNICIAN: ["JE_SSE_TELE_SECTIONAL", "SSE_TELE_INCHARGE"],
+	TRC: ["TESTROOM", "ADSTE"],
+	VIEWER: ["TESTROOM", "ADSTE", "DSTE", "SR_DSTE", "ADMIN"],
+	SSE_SNT_OFFICE: ["SSE_TELE_INCHARGE", "ADSTE"],
+	SSE_TECH: ["SSE_TELE_INCHARGE", "ADSTE"],
+};
+
+const validateReportingOfficer = async ({ inchargeId, divisionId, role }) => {
+	const allowedRoles = REPORTING_ALLOWED_BY_ROLE[role] || [];
+	const reportingOfficer = await prisma.user.findFirst({
+		where: {
+			id: inchargeId,
+			divisionId,
+			...(allowedRoles.length ? { role: { in: allowedRoles } } : {}),
+		},
+		select: { id: true },
+	});
+
+	return Boolean(reportingOfficer);
+};
+
 const create = async (req, res) => {
 	const {
 		email,
 		name,
 		designation,
+		unit,
 		password,
 		role,
 		username,
@@ -14,7 +45,8 @@ const create = async (req, res) => {
 		inchargeId,
 	} =
 		req.body;
-	const isAdminRole = role === "SUPER_ADMIN" || role === "ADMIN";
+	const isAdminRole = ADMIN_ROLES.has(role);
+	const isOptionalReportingRole = OPTIONAL_REPORTING_ROLES.has(role);
 
 	// Basic validation
 	if (!email || !name || !password || !username || !divisionId) {
@@ -25,18 +57,32 @@ const create = async (req, res) => {
 	}
 
 	try {
-		if (!isAdminRole) {
+		if (!isAdminRole && !isOptionalReportingRole) {
 			if (!inchargeId) {
 				return res
 					.status(400)
 					.json({ message: "reporting_to is required for non-admin roles." });
 			}
 
-			const reportingOfficer = await prisma.user.findFirst({
-				where: { id: inchargeId, divisionId },
-				select: { id: true },
+			const isReportingOfficerValid = await validateReportingOfficer({
+				inchargeId,
+				divisionId,
+				role,
 			});
-			if (!reportingOfficer) {
+			if (!isReportingOfficerValid) {
+				return res
+					.status(400)
+					.json({ message: "Invalid reporting_to user for this division." });
+			}
+		}
+
+		if (!isAdminRole && isOptionalReportingRole && inchargeId) {
+			const isReportingOfficerValid = await validateReportingOfficer({
+				inchargeId,
+				divisionId,
+				role,
+			});
+			if (!isReportingOfficerValid) {
 				return res
 					.status(400)
 					.json({ message: "Invalid reporting_to user for this division." });
@@ -50,9 +96,10 @@ const create = async (req, res) => {
 				username,
 				password: bcrypt.hashSync(password, 8),
 				designation,
+				unit: unit || null,
 				role,
 				divisionId, // Now linking user to their Railway Division
-				inchargeId: isAdminRole ? null : inchargeId,
+				inchargeId: isAdminRole ? null : inchargeId || null,
 			},
 		});
 
@@ -107,6 +154,8 @@ const signin = async (req, res) => {
 					id: user.id,
 					username: user.username,
 					fullName: user.name,
+					designation: user.designation || null,
+					unit: user.unit || null,
 					role: effectiveRole,
 					originalRole: user.role,
 					// Accessing the ID directly from the user record

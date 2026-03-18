@@ -1,22 +1,27 @@
 import prisma from "../lib/prisma.js";
+import { buildStationVisibilityWhere } from "../lib/access-scope.js";
 
 const SUPERVISOR_ROLES = [
 	"JE_SSE_TELE_SECTIONAL",
 	"SSE_TELE_INCHARGE",
 	"SSE_SNT_OFFICE",
 	"SSE_TECH",
+	"TCM",
 ];
 
-const getDivisionScopedStation = async ({ stationId, divisionId, role }) => {
+const getDivisionScopedStation = async ({ stationId, req }) => {
 	return prisma.station.findFirst({
 		where: {
 			id: stationId,
-			...(role === "SUPER_ADMIN" ? {} : { divisionId }),
+			...buildStationVisibilityWhere(req),
 		},
 		select: {
 			id: true,
 			divisionId: true,
 			supervisorId: true,
+			supervisors: {
+				select: { supervisorId: true },
+			},
 		},
 	});
 };
@@ -34,11 +39,17 @@ const validateSupervisor = async ({ supervisorId, divisionId, role }) => {
 	return Boolean(supervisor);
 };
 
-const getDivisionScopedLocation = async ({ id, divisionId, role }) => {
+const getAllowedStationSupervisorIds = (station) => {
+	return [...new Set([station.supervisorId, ...(station.supervisors || []).map((row) => row.supervisorId)])];
+};
+
+const getDivisionScopedLocation = async ({ id, req }) => {
 	return prisma.location.findFirst({
 		where: {
 			id,
-			...(role === "SUPER_ADMIN" ? {} : { station: { divisionId } }),
+			station: {
+				...buildStationVisibilityWhere(req),
+			},
 		},
 		select: { id: true, stationId: true, station: { select: { divisionId: true } } },
 	});
@@ -46,23 +57,37 @@ const getDivisionScopedLocation = async ({ id, divisionId, role }) => {
 
 // 1. CREATE Location
 const createLocation = async (req, res) => {
-	const { name, description, stationId, supervisorId } = req.body;
-	const { divisionId, role } = req.user;
+	const { name, description, stationId, supervisorId, useStationDefaultSupervisor } = req.body;
+	const { role } = req.user;
 
-	if (!name || !stationId || !supervisorId) {
+	if (!name || !stationId) {
 		return res
 			.status(400)
-			.json({ message: "Location name, stationId and supervisorId are required." });
+			.json({ message: "Location name and stationId are required." });
 	}
 
 	try {
-		const station = await getDivisionScopedStation({ stationId, divisionId, role });
+		const station = await getDivisionScopedStation({ stationId, req });
 		if (!station) {
 			return res.status(403).json({ message: "Invalid station access." });
 		}
 
+		const shouldUseStationDefault =
+			useStationDefaultSupervisor === true ||
+			useStationDefaultSupervisor === "true" ||
+			!supervisorId;
+		const selectedSupervisorId = shouldUseStationDefault ? station.supervisorId : supervisorId;
+
+		const allowedSupervisorIds = getAllowedStationSupervisorIds(station);
+		if (!allowedSupervisorIds.includes(selectedSupervisorId)) {
+			return res.status(400).json({
+				message:
+					"Invalid supervisor. Select one of the station supervisors or choose station default.",
+			});
+		}
+
 		const isSupervisorValid = await validateSupervisor({
-			supervisorId,
+			supervisorId: selectedSupervisorId,
 			divisionId: station.divisionId,
 			role,
 		});
@@ -77,7 +102,7 @@ const createLocation = async (req, res) => {
 				name,
 				description: description || "",
 				stationId,
-				supervisorId,
+				supervisorId: selectedSupervisorId,
 			},
 			include: {
 				station: { select: { id: true, name: true, code: true } },
@@ -94,11 +119,13 @@ const createLocation = async (req, res) => {
 
 // 2. GET all locations in division (or all for SUPER_ADMIN)
 const findAllLocations = async (req, res) => {
-	const { divisionId, role } = req.user;
-
 	try {
 		const locations = await prisma.location.findMany({
-			where: role === "SUPER_ADMIN" ? {} : { station: { divisionId } },
+			where: {
+				station: {
+					...buildStationVisibilityWhere(req),
+				},
+			},
 			include: {
 				station: { select: { id: true, name: true, code: true } },
 				supervisor: { select: { id: true, name: true, designation: true, role: true } },
@@ -115,10 +142,9 @@ const findAllLocations = async (req, res) => {
 // 3. GET all locations for a station
 const findStationLocations = async (req, res) => {
 	const { stationId } = req.params;
-	const { divisionId, role } = req.user;
 
 	try {
-		const station = await getDivisionScopedStation({ stationId, divisionId, role });
+		const station = await getDivisionScopedStation({ stationId, req });
 		if (!station) {
 			return res.status(403).json({ message: "Invalid station access." });
 		}
@@ -140,13 +166,14 @@ const findStationLocations = async (req, res) => {
 // 4. GET Location Details (Racks -> Equipment -> Ports)
 const getLocationDetails = async (req, res) => {
 	const { id } = req.params;
-	const { divisionId, role } = req.user;
 
 	try {
 		const location = await prisma.location.findFirst({
 			where: {
 				id,
-				...(role === "SUPER_ADMIN" ? {} : { station: { divisionId } }),
+				station: {
+					...buildStationVisibilityWhere(req),
+				},
 			},
 			include: {
 				station: { select: { id: true, name: true, code: true } },
@@ -178,18 +205,47 @@ const getLocationDetails = async (req, res) => {
 // 5. UPDATE Location details
 const updateLocation = async (req, res) => {
 	const { id } = req.params;
-	const { name, description, supervisorId } = req.body;
-	const { divisionId, role } = req.user;
+	const { name, description, supervisorId, useStationDefaultSupervisor } = req.body;
+	const { role } = req.user;
 
 	try {
-		const existing = await getDivisionScopedLocation({ id, divisionId, role });
+		const existing = await getDivisionScopedLocation({ id, req });
 		if (!existing) {
 			return res.status(404).json({ message: "Location not found" });
 		}
 
-		if (supervisorId !== undefined) {
+		let resolvedSupervisorId;
+		if (supervisorId !== undefined || useStationDefaultSupervisor !== undefined) {
+			const station = await getDivisionScopedStation({
+				stationId: existing.stationId,
+				req,
+			});
+			if (!station) {
+				return res.status(403).json({ message: "Invalid station access." });
+			}
+			const shouldUseStationDefault =
+				useStationDefaultSupervisor === true ||
+				useStationDefaultSupervisor === "true";
+			resolvedSupervisorId = shouldUseStationDefault
+				? station.supervisorId
+				: supervisorId;
+
+			if (!resolvedSupervisorId) {
+				return res.status(400).json({
+					message: "Supervisor is required when not using station default.",
+				});
+			}
+
+			const allowedSupervisorIds = getAllowedStationSupervisorIds(station);
+			if (!allowedSupervisorIds.includes(resolvedSupervisorId)) {
+				return res.status(400).json({
+					message:
+						"Invalid supervisor. Select one of the station supervisors or choose station default.",
+				});
+			}
+
 			const isSupervisorValid = await validateSupervisor({
-				supervisorId,
+				supervisorId: resolvedSupervisorId,
 				divisionId: existing.station.divisionId,
 				role,
 			});
@@ -205,7 +261,8 @@ const updateLocation = async (req, res) => {
 			data: {
 				name: name !== undefined ? name : undefined,
 				description: description !== undefined ? description : undefined,
-				supervisorId: supervisorId !== undefined ? supervisorId : undefined,
+				supervisorId:
+					resolvedSupervisorId !== undefined ? resolvedSupervisorId : undefined,
 			},
 			include: {
 				station: { select: { id: true, name: true, code: true } },
@@ -226,10 +283,9 @@ const updateLocation = async (req, res) => {
 // 6. DELETE Location
 const deleteLocation = async (req, res) => {
 	const { id } = req.params;
-	const { divisionId, role } = req.user;
 
 	try {
-		const existing = await getDivisionScopedLocation({ id, divisionId, role });
+		const existing = await getDivisionScopedLocation({ id, req });
 		if (!existing) {
 			return res.status(404).json({ message: "Location not found" });
 		}

@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma.js";
+import { buildStationVisibilityWhere } from "../lib/access-scope.js";
 
 export const createRack = async (req, res) => {
 	try {
@@ -11,6 +12,19 @@ export const createRack = async (req, res) => {
 			return res.status(400).json({
 				error: "Rack Name and Location ID are required.",
 			});
+		}
+
+		const location = await prisma.location.findFirst({
+			where: {
+				id: locationId,
+				station: {
+					...buildStationVisibilityWhere(req),
+				},
+			},
+			select: { id: true },
+		});
+		if (!location) {
+			return res.status(403).json({ message: "Forbidden" });
 		}
 
 		const rack = await prisma.rack.create({
@@ -34,6 +48,19 @@ export const createRack = async (req, res) => {
 export const findRacksByLocation = async (req, res) => {
 	try {
 		const { locationId } = req.params;
+		const location = await prisma.location.findFirst({
+			where: {
+				id: locationId,
+				station: {
+					...buildStationVisibilityWhere(req),
+				},
+			},
+			select: { id: true },
+		});
+		if (!location) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
 		const racks = await prisma.rack.findMany({
 			where: { locationId },
 			include: {
@@ -53,6 +80,17 @@ export const findRacksByStation = async (req, res) => {
 
 		if (!stationId) {
 			return res.status(400).json({ message: "Station ID is required!" });
+		}
+
+		const station = await prisma.station.findFirst({
+			where: {
+				id: stationId,
+				...buildStationVisibilityWhere(req),
+			},
+			select: { id: true },
+		});
+		if (!station) {
+			return res.status(403).json({ message: "Forbidden" });
 		}
 
 		const racks = await prisma.rack.findMany({
@@ -81,6 +119,21 @@ export const findRacksByStation = async (req, res) => {
 export const updateRack = async (req, res) => {
 	try {
 		const { id } = req.params;
+		const existing = await prisma.rack.findFirst({
+			where: {
+				id,
+				location: {
+					station: {
+						...buildStationVisibilityWhere(req),
+					},
+				},
+			},
+			select: { id: true },
+		});
+		if (!existing) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
 		const updatedRack = await prisma.rack.update({
 			where: { id },
 			// If updating from the drawer, wrap this in { rackData } check if needed
@@ -95,6 +148,21 @@ export const updateRack = async (req, res) => {
 export const deleteRack = async (req, res) => {
 	try {
 		const { id } = req.params;
+		const existing = await prisma.rack.findFirst({
+			where: {
+				id,
+				location: {
+					station: {
+						...buildStationVisibilityWhere(req),
+					},
+				},
+			},
+			select: { id: true },
+		});
+		if (!existing) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
 		await prisma.rack.delete({ where: { id } });
 		res.status(204).send();
 	} catch (error) {

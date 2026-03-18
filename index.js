@@ -16,12 +16,14 @@ import portRoutes from "./src/routes/port-routes.js";
 import portTemplateRoutes from "./src/routes/port-template-routes.js";
 import projectRoutes from "./src/routes/project-routes.js";
 import rackRoutes from "./src/routes/rack-routes.js";
+import sectionRoutes from "./src/routes/section-routes.js";
 import stationRoutes from "./src/routes/station-routes.js";
 import stationCableRoutes from "./src/routes/station-cable-routes.js";
 import subSectionroutes from "./src/routes/sub-section-routes.js";
 import taskRoutes from "./src/routes/task-routes.js";
 import tnpRoutes from "./src/routes/tnp-routes.js";
 import userRoutes from "./src/routes/user-routes.js";
+import workExecutionRoutes from "./src/routes/work-execution-routes.js";
 
 const app = express();
 
@@ -40,6 +42,7 @@ app.use(
 
 app.use("/auth", authRoutes);
 app.use("/station", stationRoutes);
+app.use("/section", sectionRoutes);
 app.use("/location", locationRoutes);
 app.use("/rack", rackRoutes);
 app.use("/equipment", equipmentRoutes);
@@ -57,6 +60,7 @@ app.use("/tnp", tnpRoutes);
 app.use("/circuits", circuitRoutes);
 app.use("/station-cable", stationCableRoutes);
 app.use("/escalation-matrix", escalationMatrixRoutes);
+app.use("/work-execution", workExecutionRoutes);
 
 if (process.env.ENABLE_SCHEDULER !== "false") {
 	cron.schedule(

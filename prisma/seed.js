@@ -91,6 +91,43 @@ const addMinutes = (date, mins) => new Date(date.getTime() + mins * 60 * 1000);
 const addHours = (date, hours) =>
 	new Date(date.getTime() + hours * 60 * 60 * 1000);
 
+const purgeDataKeepStationsAndSubsections = async () => {
+	const keepTableNames = new Set([
+		"zone",
+		"division",
+		"section",
+		"user",
+		"station",
+		"subsection",
+		"_stationtosubsection",
+	]);
+
+	const tableRows = await prisma.$queryRaw`
+		SELECT tablename
+		FROM pg_tables
+		WHERE schemaname = 'public'
+	`;
+
+	const truncateTables = tableRows
+		.map((row) => row.tablename)
+		.filter((tableName) => {
+			const normalized = String(tableName).toLowerCase();
+			return !normalized.startsWith("_prisma") && !keepTableNames.has(normalized);
+		});
+
+	if (!truncateTables.length) {
+		console.log("No tables found to purge.");
+		return;
+	}
+
+	const truncateSql = `TRUNCATE TABLE ${truncateTables
+		.map((tableName) => `"public"."${String(tableName).replaceAll('"', '""')}"`)
+		.join(", ")} RESTART IDENTITY CASCADE;`;
+
+	await prisma.$executeRawUnsafe(truncateSql);
+	console.log(`Purged ${truncateTables.length} tables. Kept station/subsection + required masters.`);
+};
+
 const ensureDivision = async ({ zoneId, code, name }) => {
 	const existing = await prisma.division.findFirst({
 		where: { zoneId, code },
@@ -152,6 +189,15 @@ const upsertTaskHistory = async ({
 };
 
 async function main() {
+	const seedMode = process.env.SEED_MODE || "full";
+
+	if (seedMode === "purge_keep_geo") {
+		console.log("--- Purging data (keeping stations/subsections) ---");
+		await purgeDataKeepStationsAndSubsections();
+		console.log("--- Purge complete ---");
+		return;
+	}
+
 	console.log("--- Starting demo data seed for dashboard ---");
 	const passwordHash = await bcrypt.hash(COMMON_PASSWORD, 10);
 
