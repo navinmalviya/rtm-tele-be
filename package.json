@@ -4,8 +4,9 @@
 	"description": "",
 	"main": "index.js",
 	"scripts": {
-		"dev": "tsx watch index.js",
-		"start": "tsx index.js"
+		"dev": "prisma generate && tsx watch index.js",
+		"start": "prisma generate && tsx index.js",
+		"postinstall": "prisma generate"
 	},
 	"keywords": [],
 	"author": "",
