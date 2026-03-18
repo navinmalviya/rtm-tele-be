@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma from "../lib/prisma.js";
 
 // 1. CREATE Port Template
 const createPortTemplate = async (req, res) => {

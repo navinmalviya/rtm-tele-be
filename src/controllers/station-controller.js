@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma from "../lib/prisma.js";
 import { buildStationVisibilityWhere } from "../lib/access-scope.js";
 
 const STATION_SUPERVISOR_ROLES = [

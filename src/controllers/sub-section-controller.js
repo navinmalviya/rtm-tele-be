@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma from "../lib/prisma.js";
 import { buildSubsectionVisibilityWhere } from "../lib/access-scope.js";
 
 // 1. CREATE Sub-section (Connects two stations)

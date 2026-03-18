@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma from "../lib/prisma.js";
 import { buildStationVisibilityWhere } from "../lib/access-scope.js";
 
 export const createPortLink = async (req, res) => {

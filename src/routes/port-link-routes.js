@@ -7,10 +7,10 @@ import {
 	getLinkDetails,
 	getStationLinks,
 	updatePortLink,
-} from "../controllers/port-link-controller";
-import { verifyToken } from "../middlewares/verifiyToken";
-import { allowRoles } from "../middlewares/allowRoles";
-import { ROLE_ACCESS } from "../lib/rbac";
+} from "../controllers/port-link-controller.js";
+import { verifyToken } from "../middlewares/verifiyToken.js";
+import { allowRoles } from "../middlewares/allowRoles.js";
+import { ROLE_ACCESS } from "../lib/rbac.js";
 
 const router = express.Router();
 

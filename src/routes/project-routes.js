@@ -5,10 +5,10 @@ import {
 	getProjects,
 	syncProjectProgress,
 	updateProject,
-} from "../controllers/project-controller";
-import { verifyToken } from "../middlewares/verifiyToken";
-import { allowRoles } from "../middlewares/allowRoles";
-import { ROLE_ACCESS } from "../lib/rbac";
+} from "../controllers/project-controller.js";
+import { verifyToken } from "../middlewares/verifiyToken.js";
+import { allowRoles } from "../middlewares/allowRoles.js";
+import { ROLE_ACCESS } from "../lib/rbac.js";
 
 const router = express.Router();
 

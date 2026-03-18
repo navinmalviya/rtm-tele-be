@@ -1,9 +1,9 @@
 import express from "express";
-import { getAllUsers } from "../controllers/user-controller";
+import { getAllUsers } from "../controllers/user-controller.js";
 import { updateUser, deleteUser } from "../controllers/user-admin-controller.js";
-import { verifyToken } from "../middlewares/verifiyToken";
-import { allowRoles } from "../middlewares/allowRoles";
-import { ROLE_ACCESS } from "../lib/rbac";
+import { verifyToken } from "../middlewares/verifiyToken.js";
+import { allowRoles } from "../middlewares/allowRoles.js";
+import { ROLE_ACCESS } from "../lib/rbac.js";
 
 const router = express.Router();
 

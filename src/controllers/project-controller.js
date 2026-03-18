@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma from "../lib/prisma.js";
 
 const updateProjectProgress = async (projectId) => {
 	const tasks = await prisma.task.findMany({
