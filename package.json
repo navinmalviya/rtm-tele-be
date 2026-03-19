@@ -5,8 +5,7 @@
 	"main": "index.js",
 	"scripts": {
 		"dev": "prisma generate && tsx watch index.js",
-		"start": "prisma generate && tsx index.js",
-		"postinstall": "prisma generate"
+		"start": "node index.js"
 	},
 	"keywords": [],
 	"author": "",
