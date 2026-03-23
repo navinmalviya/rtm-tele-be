@@ -145,3 +145,47 @@ export const syncProjectProgress = async (req, res) => {
 		res.status(500).json({ error: error.message });
 	}
 };
+
+export const deleteProject = async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		const project = await prisma.project.findUnique({
+			where: { id },
+			select: { id: true, ownerId: true },
+		});
+		if (!project) {
+			return res.status(404).json({ message: "Project not found" });
+		}
+
+		const canDelete =
+			req.user.role === "SUPER_ADMIN" ||
+			req.user.role === "ADMIN" ||
+			req.user.role === "TESTROOM" ||
+			project.ownerId === req.user.id;
+		if (!canDelete) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		await prisma.$transaction(async (tx) => {
+			const tasks = await tx.task.findMany({
+				where: { projectId: id },
+				select: { id: true },
+			});
+			const taskIds = tasks.map((row) => row.id);
+
+			if (taskIds.length > 0) {
+				await tx.failure.deleteMany({ where: { taskId: { in: taskIds } } });
+				await tx.maintenance.deleteMany({ where: { taskId: { in: taskIds } } });
+				await tx.tRCRequest.deleteMany({ where: { taskId: { in: taskIds } } });
+				await tx.task.deleteMany({ where: { id: { in: taskIds } } });
+			}
+
+			await tx.project.delete({ where: { id } });
+		});
+
+		return res.status(200).json({ message: "Project deleted successfully" });
+	} catch (error) {
+		return res.status(500).json({ error: error.message });
+	}
+};

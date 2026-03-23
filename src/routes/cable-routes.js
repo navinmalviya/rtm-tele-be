@@ -50,6 +50,14 @@ router.post(
 	cableController.createJoint,
 );
 
+// Add cable cut entry
+router.post(
+	"/:id/cut",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	cableController.createCableCut,
+);
+
 // Add cable test report (scheduled / failure testing)
 router.post(
 	"/:id/test-report",
@@ -64,6 +72,14 @@ router.post(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.ASSET_WRITE),
 	cableController.connectMediaToEquipment,
+);
+
+// Map pair/fiber with an approved station circuit
+router.post(
+	"/connect-station-circuit",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	cableController.connectMediaToStationCircuit,
 );
 
 // Update cable metadata (length, maintenance authority, etc.)

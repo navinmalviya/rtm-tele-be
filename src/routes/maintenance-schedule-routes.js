@@ -2,6 +2,7 @@ import Router from "express";
 import {
 	createMaintenanceOccurrence,
 	createMaintenanceSchedule,
+	deleteMaintenanceSchedule,
 	getOccurrenceInspectionForm,
 	listMaintenanceSchedules,
 	listOverdueMaintenance,
@@ -46,6 +47,12 @@ router.patch(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.ASSET_WRITE),
 	toggleMaintenanceScheduleStatus,
+);
+router.delete(
+	"/:id",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.ASSET_WRITE),
+	deleteMaintenanceSchedule,
 );
 router.post(
 	"/:scheduleId/occurrences",

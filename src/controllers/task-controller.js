@@ -205,6 +205,127 @@ export const createTask = async (req, res) => {
 };
 
 /**
+ * UPDATE TASK CORE DETAILS (owner/testroom/admin)
+ */
+export const updateTask = async (req, res) => {
+	const { id } = req.params;
+	const actorId = req.user.id;
+	const { title, description, priority, assignedToId } = req.body || {};
+
+	try {
+		const task = await prisma.task.findUnique({
+			where: { id },
+			include: {
+				owner: { select: { divisionId: true } },
+			},
+		});
+
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		const canEdit =
+			req.user.role === "SUPER_ADMIN" ||
+			req.user.role === "ADMIN" ||
+			req.user.role === "TESTROOM" ||
+			task.ownerId === actorId;
+
+		if (!canEdit) {
+			return res.status(403).json({ message: "Only owner/Testroom/Admin can edit task." });
+		}
+
+		const updatePayload = {};
+
+		if (title !== undefined) {
+			const cleanTitle = String(title || "").trim();
+			if (!cleanTitle) {
+				return res.status(400).json({ message: "Title is required." });
+			}
+			updatePayload.title = cleanTitle;
+		}
+
+		if (description !== undefined) {
+			const cleanDescription = String(description || "").trim();
+			if (!cleanDescription) {
+				return res.status(400).json({ message: "Description is required." });
+			}
+			updatePayload.description = cleanDescription;
+		}
+
+		if (priority !== undefined) {
+			updatePayload.priority = String(priority || "").trim().toUpperCase();
+		}
+
+		if (assignedToId !== undefined) {
+			updatePayload.assignedToId = assignedToId || null;
+		}
+
+		if (Object.keys(updatePayload).length === 0) {
+			return res.status(400).json({ message: "No valid fields provided for update." });
+		}
+
+		const updatedTask = await prisma.$transaction(async (tx) => {
+			const nextTask = await tx.task.update({
+				where: { id },
+				data: updatePayload,
+			});
+
+			if (task.title !== nextTask.title) {
+				await appendTaskHistory(tx, {
+					taskId: id,
+					actorId,
+					action: "TASK_TITLE_UPDATED",
+					fromValue: task.title,
+					toValue: nextTask.title,
+					details: "Task title updated",
+				});
+			}
+
+			if (task.description !== nextTask.description) {
+				await appendTaskHistory(tx, {
+					taskId: id,
+					actorId,
+					action: "TASK_DESCRIPTION_UPDATED",
+					details: "Task description updated",
+				});
+			}
+
+			if (task.priority !== nextTask.priority) {
+				await appendTaskHistory(tx, {
+					taskId: id,
+					actorId,
+					action: "PRIORITY_CHANGED",
+					fromValue: task.priority,
+					toValue: nextTask.priority,
+					details: `Priority changed from ${task.priority} to ${nextTask.priority}`,
+				});
+			}
+
+			if ((task.assignedToId || null) !== (nextTask.assignedToId || null)) {
+				await appendTaskHistory(tx, {
+					taskId: id,
+					actorId,
+					action: "ASSIGNEE_UPDATED",
+					fromValue: task.assignedToId || "UNASSIGNED",
+					toValue: nextTask.assignedToId || "UNASSIGNED",
+					details: "Task assignee updated",
+				});
+			}
+
+			return nextTask;
+		});
+
+		return res.status(200).json({ message: "Task updated successfully", task: updatedTask });
+	} catch (error) {
+		return res.status(500).json({ error: error.message });
+	}
+};
+
+/**
  * UPDATE TASK STATUS & SYNC PROGRESS
  */
 export const updateTaskStatus = async (req, res) => {
@@ -592,6 +713,53 @@ export const addSseInchargeRemark = async (req, res) => {
 		res.status(200).json(comment);
 	} catch (error) {
 		res.status(500).json({ error: error.message });
+	}
+};
+
+/**
+ * DELETE TASK
+ */
+export const deleteTask = async (req, res) => {
+	const { id } = req.params;
+	try {
+		const task = await prisma.task.findUnique({
+			where: { id },
+			include: {
+				owner: { select: { divisionId: true } },
+			},
+		});
+
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+
+		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		const canDelete =
+			req.user.role === "SUPER_ADMIN" ||
+			req.user.role === "ADMIN" ||
+			req.user.role === "TESTROOM" ||
+			task.ownerId === req.user.id;
+		if (!canDelete) {
+			return res.status(403).json({ message: "Only owner/Testroom/Admin can delete task." });
+		}
+
+		await prisma.$transaction(async (tx) => {
+			await tx.failure.deleteMany({ where: { taskId: id } });
+			await tx.maintenance.deleteMany({ where: { taskId: id } });
+			await tx.tRCRequest.deleteMany({ where: { taskId: id } });
+			await tx.task.delete({ where: { id } });
+		});
+
+		if (task.projectId) {
+			await syncProjectProgress(task.projectId);
+		}
+
+		return res.status(200).json({ message: "Task deleted successfully" });
+	} catch (error) {
+		return res.status(500).json({ error: error.message });
 	}
 };
 

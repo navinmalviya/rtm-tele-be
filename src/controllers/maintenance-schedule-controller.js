@@ -635,6 +635,24 @@ export const toggleMaintenanceScheduleStatus = async (req, res) => {
 	}
 };
 
+export const deleteMaintenanceSchedule = async (req, res) => {
+	const { id } = req.params;
+	try {
+		const schedule = await ensureScheduleDivisionAccess(id, req.user);
+		if (!schedule)
+			return res.status(404).json({ message: "Schedule not found" });
+		if (schedule === "FORBIDDEN")
+			return res.status(403).json({ message: "Forbidden" });
+
+		await prisma.maintenanceSchedule.delete({
+			where: { id },
+		});
+		return res.status(200).json({ message: "Schedule deleted successfully" });
+	} catch (error) {
+		return res.status(500).json({ error: error.message });
+	}
+};
+
 export const createMaintenanceOccurrence = async (req, res) => {
 	const { scheduleId } = req.params;
 

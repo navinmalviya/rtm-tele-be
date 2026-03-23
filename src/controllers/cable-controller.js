@@ -343,7 +343,89 @@ export const cableController = {
 		}
 	},
 
-	// 5) Add cable testing report
+	// 5) Add cable cut entry
+	createCableCut: async (req, res) => {
+		try {
+			const { id } = req.params;
+			const subsectionScope = buildSubsectionVisibilityWhere(req);
+			const { id: reportedById } = req.user || {};
+			const { locationKM, cutDateTime, restorationDateTime, putRightDetails } = req.body || {};
+
+			if (!reportedById) {
+				return res.status(401).json({ message: "Unauthorized user." });
+			}
+
+			if (!locationKM || !String(locationKM).trim()) {
+				return res.status(400).json({ message: "locationKM is required." });
+			}
+
+			const cable = await prisma.cable.findFirst({
+				where: {
+					id,
+					subsection: {
+						...subsectionScope,
+					},
+				},
+				include: {
+					subsection: { select: { startKm: true, endKm: true } },
+				},
+			});
+
+			if (!cable) {
+				return res.status(404).json({ message: "Cable not found." });
+			}
+
+			const rangeStart = cable.subsection?.startKm;
+			const rangeEnd = cable.subsection?.endKm;
+			const kmMatch = String(locationKM).match(/^\s*(\d+(\.\d+)?)/);
+			if (
+				rangeStart !== null &&
+				rangeStart !== undefined &&
+				rangeEnd !== null &&
+				rangeEnd !== undefined &&
+				kmMatch
+			) {
+				const kmValue = Number.parseFloat(kmMatch[1]);
+				if (kmValue < rangeStart || kmValue > rangeEnd) {
+					return res.status(400).json({
+						message: `Cable cut location must be within subsection range ${rangeStart}-${rangeEnd}.`,
+					});
+				}
+			}
+
+			const resolvedCutDateTime = parseNullableDate(cutDateTime) || new Date();
+			const resolvedRestorationDateTime = parseNullableDate(restorationDateTime);
+
+			if (
+				resolvedRestorationDateTime &&
+				resolvedRestorationDateTime.getTime() < resolvedCutDateTime.getTime()
+			) {
+				return res.status(400).json({
+					message: "Restoration time cannot be earlier than cut time.",
+				});
+			}
+
+			const created = await prisma.cableCut.create({
+				data: {
+					cableId: id,
+					reportedById,
+					locationKM: String(locationKM).trim(),
+					cutDateTime: resolvedCutDateTime,
+					restorationDateTime: resolvedRestorationDateTime || null,
+					putRightDetails: putRightDetails ? String(putRightDetails).trim() : null,
+				},
+				include: {
+					reportedBy: { select: { id: true, name: true, designation: true, role: true } },
+				},
+			});
+
+			return res.status(201).json(created);
+		} catch (error) {
+			return res.status(500).json({ error: error.message });
+		}
+	},
+
+	// 6) Add cable testing report
 	createCableTestReport: async (req, res) => {
 		try {
 			const { id } = req.params;
@@ -512,7 +594,128 @@ export const cableController = {
 		}
 	},
 
-	// 7) Create subsection cable + generate media
+	// 7) Connect pair/fiber to approved station circuit
+	connectMediaToStationCircuit: async (req, res) => {
+		try {
+			const { mediaType, mediaId, stationCircuitId } = req.body;
+			const subsectionScope = buildSubsectionVisibilityWhere(req);
+			const { divisionId, role } = req.user;
+
+			if (!mediaType || !mediaId || !stationCircuitId) {
+				return res
+					.status(400)
+					.json({ message: "mediaType, mediaId and stationCircuitId are required." });
+			}
+
+			if (!["PAIR", "FIBER"].includes(mediaType)) {
+				return res.status(400).json({ message: "mediaType must be PAIR or FIBER." });
+			}
+
+			const stationCircuit = await prisma.stationCircuit.findFirst({
+				where: {
+					id: stationCircuitId,
+					status: "APPROVED",
+					...(role === "SUPER_ADMIN" ? {} : { station: { divisionId } }),
+				},
+				include: {
+					station: { select: { id: true, name: true, code: true } },
+					circuitMaster: { select: { id: true, code: true, name: true } },
+				},
+			});
+
+			if (!stationCircuit) {
+				return res
+					.status(404)
+					.json({ message: "Approved station circuit not found for this division." });
+			}
+
+			const mediaWhere =
+				mediaType === "PAIR"
+					? {
+							id: mediaId,
+							cable: {
+								subsection: { ...subsectionScope },
+							},
+					  }
+					: {
+							id: mediaId,
+							cable: {
+								subsection: { ...subsectionScope },
+							},
+					  };
+
+			const mediaRecord =
+				mediaType === "PAIR"
+					? await prisma.copperPair.findFirst({
+							where: mediaWhere,
+							select: {
+								id: true,
+								quadNo: true,
+								pairNo: true,
+								cableId: true,
+								circuits: { select: { id: true, circuitIdString: true } },
+							},
+					  })
+					: await prisma.fiber.findFirst({
+							where: mediaWhere,
+							select: {
+								id: true,
+								tubeNo: true,
+								fiberNo: true,
+								cableId: true,
+								circuits: { select: { id: true, circuitIdString: true } },
+							},
+					  });
+
+			if (!mediaRecord) {
+				return res.status(404).json({ message: "Media not found or not accessible." });
+			}
+
+			const circuitCode = `SC-${stationCircuit.id.slice(0, 8).toUpperCase()}`;
+			const circuitDescription = `${stationCircuit.circuitMaster?.name || "Station Circuit"}${
+				stationCircuit.identifier ? ` • ${stationCircuit.identifier}` : ""
+			} • ${stationCircuit.station?.code || stationCircuit.station?.name || "Station"}`;
+
+			const circuit = await prisma.circuit.upsert({
+				where: { circuitIdString: circuitCode },
+				update: {
+					description: circuitDescription,
+				},
+				create: {
+					circuitIdString: circuitCode,
+					description: circuitDescription,
+				},
+			});
+
+			const alreadyMapped = (mediaRecord.circuits || []).some((c) => c.id === circuit.id);
+			if (!alreadyMapped) {
+				if (mediaType === "PAIR") {
+					await prisma.copperPair.update({
+						where: { id: mediaId },
+						data: { circuits: { connect: { id: circuit.id } } },
+					});
+				} else {
+					await prisma.fiber.update({
+						where: { id: mediaId },
+						data: { circuits: { connect: { id: circuit.id } } },
+					});
+				}
+			}
+
+			return res.status(200).json({
+				message: alreadyMapped ? "Circuit already mapped on selected media." : "Mapped successfully.",
+				circuit: {
+					id: circuit.id,
+					circuitIdString: circuit.circuitIdString,
+					description: circuit.description,
+				},
+			});
+		} catch (error) {
+			return res.status(500).json({ error: error.message });
+		}
+	},
+
+	// 8) Create subsection cable + generate media
 	createCable: async (req, res) => {
 		try {
 			const {

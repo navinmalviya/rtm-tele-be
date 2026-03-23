@@ -3,10 +3,12 @@ import {
 	addTaskComment,
 	addSseInchargeRemark,
 	createTask,
+	deleteTask,
 	escalateOverdueFailures,
 	getTaskById,
 	getTasks,
 	upsertFailureForTask,
+	updateTask,
 	updateTaskStatus,
 } from "../controllers/task-controller.js";
 import { verifyToken } from "../middlewares/verifiyToken.js";
@@ -52,6 +54,18 @@ router.get(
 );
 
 /**
+ * @route   PATCH /api/tasks/:id
+ * @desc    Update task core details (title/description/priority/assignee)
+ * @access  Private
+ */
+router.patch(
+	"/:id",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.TASK_WRITE),
+	updateTask,
+);
+
+/**
  * @route   PATCH /api/tasks/:id/status
  * @desc    Update task status and trigger project progress recalculation
  * @access  Private
@@ -61,6 +75,13 @@ router.patch(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.TASK_WRITE),
 	updateTaskStatus,
+);
+
+router.delete(
+	"/:id",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.TASK_WRITE),
+	deleteTask,
 );
 
 /**

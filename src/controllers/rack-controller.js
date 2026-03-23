@@ -157,15 +157,28 @@ export const deleteRack = async (req, res) => {
 					},
 				},
 			},
-			select: { id: true },
+			select: { id: true, _count: { select: { equipments: true } } },
 		});
 		if (!existing) {
 			return res.status(403).json({ message: "Forbidden" });
 		}
 
-		await prisma.rack.delete({ where: { id } });
+		await prisma.$transaction(async (tx) => {
+			if ((existing._count?.equipments || 0) > 0) {
+				await tx.equipment.updateMany({
+					where: { rackId: id },
+					data: { rackId: null, uPosition: null },
+				});
+			}
+			await tx.rack.delete({ where: { id } });
+		});
 		res.status(204).send();
 	} catch (error) {
+		if (error.code === "P2003") {
+			return res.status(400).json({
+				message: "Cannot delete rack due to linked records. Please retry after refreshing data.",
+			});
+		}
 		res.status(500).json({ error: error.message });
 	}
 };

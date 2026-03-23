@@ -1,5 +1,10 @@
 import express from "express";
-import { getAllUsers } from "../controllers/user-controller.js";
+import {
+	getAllUsers,
+	getMyProfile,
+	updateMyPassword,
+	updateMyProfile,
+} from "../controllers/user-controller.js";
 import { updateUser, deleteUser } from "../controllers/user-admin-controller.js";
 import { verifyToken } from "../middlewares/verifiyToken.js";
 import { allowRoles } from "../middlewares/allowRoles.js";
@@ -17,6 +22,24 @@ router.get(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.USER_MANAGE),
 	getAllUsers,
+);
+
+router.get(
+	"/me",
+	verifyToken,
+	getMyProfile,
+);
+
+router.patch(
+	"/me",
+	verifyToken,
+	updateMyProfile,
+);
+
+router.patch(
+	"/me/password",
+	verifyToken,
+	updateMyPassword,
 );
 
 router.patch(

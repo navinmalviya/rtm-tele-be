@@ -1,6 +1,7 @@
 import express from "express";
 import {
 	createProject,
+	deleteProject,
 	getProjectDetails,
 	getProjects,
 	syncProjectProgress,
@@ -36,6 +37,12 @@ router.patch(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.TASK_WRITE),
 	updateProject,
+);
+router.delete(
+	"/:id",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.TASK_WRITE),
+	deleteProject,
 );
 
 // Utility: Manually sync progress if needed

@@ -267,11 +267,19 @@ export const deactivateDivisionCircuitMaster = async (req, res) => {
 			return res.status(403).json({ message: "Forbidden" });
 		}
 
-		const updated = await prisma.divisionCircuitMaster.update({
-			where: { id },
-			data: { isActive: false },
+		const linkedCount = await prisma.stationCircuit.count({
+			where: { circuitMasterId: id },
 		});
-		return res.status(200).json(updated);
+		if (linkedCount > 0) {
+			return res.status(400).json({
+				message: `Cannot delete master. ${linkedCount} station circuit(s) are linked.`,
+			});
+		}
+
+		await prisma.divisionCircuitMaster.delete({
+			where: { id },
+		});
+		return res.status(200).json({ message: "Circuit master deleted successfully." });
 	} catch (error) {
 		return res.status(500).json({ error: error.message });
 	}
