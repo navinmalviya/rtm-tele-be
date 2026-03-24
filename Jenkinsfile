@@ -25,7 +25,7 @@ pipeline {
         DB_NAME = 'rtm_telecom_app'
         DB_USER = 'admin'
         DB_PASSWORD = 'pass@123'
-        DATABASE_URL = 'postgresql://postgres:postgres@postgres:5432/rtm_telecom_app'
+        DATABASE_URL="postgres://admin:pass@123@localhost:5432/rtm_telecom_app"
         API_SECRET="1234"
         // Network name
         NETWORK_NAME = 'app-network'
