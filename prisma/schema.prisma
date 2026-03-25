@@ -258,6 +258,32 @@ enum CauseOfFailure {
   HIGH_LOSS
 }
 
+enum DailyReportSectionType {
+  CORE_FAILURE
+  BSNL_FCT
+  OFC_DEFICIENCY
+  QUAD6_DEFICIENCY
+  EXPOSED_CABLE
+  WIFI_STATUS
+  CCTV_STATUS
+  WT_TESTING
+  MOVEMENT
+  NOTE
+  OTHER
+}
+
+enum DailyInputSourceType {
+  FIELD_APP
+  TELEPHONIC
+  WHATSAPP
+  MANUAL
+}
+
+enum DailyReportExportFormat {
+  EXCEL
+  GRAPHICAL
+}
+
 enum CableType {
   PIJF
   OFC
@@ -287,18 +313,20 @@ model Zone {
 }
 
 model Division {
-  id          String       @id @default(uuid())
-  name        String
-  code        String
-  zoneId      String
-  zone        Zone         @relation(fields: [zoneId], references: [id])
-  sections    Section[]
-  users       User[]
-  stations    Station[]
-  subsections Subsection[]
-  circuitMasters DivisionCircuitMaster[]
+  id                 String                  @id @default(uuid())
+  name               String
+  code               String
+  zoneId             String
+  zone               Zone                    @relation(fields: [zoneId], references: [id])
+  sections           Section[]
+  users              User[]
+  stations           Station[]
+  subsections        Subsection[]
+  circuitMasters     DivisionCircuitMaster[]
   escalationMatrices EscalationMatrix[]
-  workExecutions WorkExecution[]
+  workExecutions     WorkExecution[]
+  dailyReportInputs  DailyReportInput[]
+  dailyReportRuns    DailyReportRun[]
 }
 
 model Section {
@@ -342,6 +370,7 @@ model Subsection {
   workAllocations      WorkAllocationEntry[]
   workProgressEntries  WorkProgressEntry[]
   workScopes           WorkExecutionSubsectionScope[]
+  dailyReportInputs    DailyReportInput[]
 }
 
 model Station {
@@ -361,25 +390,26 @@ model Station {
   maintSchedules MaintenanceSchedule[]
   tnpItems       TnpItem[]
 
-  failures     Failure[] // Link to failures at this station
-  maintenances Maintenance[] // Link to maintenance at this station
-  stationCircuits StationCircuit[]
-  workDemands    WorkDemandEntry[]
-  workAllocations WorkAllocationEntry[]
+  failures            Failure[] // Link to failures at this station
+  maintenances        Maintenance[] // Link to maintenance at this station
+  stationCircuits     StationCircuit[]
+  workDemands         WorkDemandEntry[]
+  workAllocations     WorkAllocationEntry[]
   workProgressEntries WorkProgressEntry[]
   workScopes          WorkExecutionStationScope[]
-  measuredCableTests  CableTestReport[]       @relation("CableTestMeasuredAtStation")
+  measuredCableTests  CableTestReport[]           @relation("CableTestMeasuredAtStation")
+  dailyReportInputs   DailyReportInput[]
 
   // Explicit relations for block boundaries
   subsectionsFrom Subsection[] @relation("FromStationRelation")
   subsectionsTo   Subsection[] @relation("ToStationRelation")
 
   createdById  String
-  createdBy    User     @relation("UserStations", fields: [createdById], references: [id])
+  createdBy    User                @relation("UserStations", fields: [createdById], references: [id])
   supervisorId String
-  supervisor   User     @relation("StationSupervisor", fields: [supervisorId], references: [id])
+  supervisor   User                @relation("StationSupervisor", fields: [supervisorId], references: [id])
   supervisors  StationSupervisor[]
-  createdAt    DateTime @default(now())
+  createdAt    DateTime            @default(now())
 }
 
 // -----------------------------------------------------------------------------
@@ -416,37 +446,40 @@ model User {
   EcSocketsTestedByMe EcTesting[] @relation("FieldTestingAssignment")
 
   // Sockets where this user was the 'testedWith' (The person in the Testroom)
-  EcSocketsTestedWithMe        EcTesting[]             @relation("TestroomVerificationAssignment")
-  movements                    DailyMovement[]
-  inspectionNotes              InspectionNote[]
-  stations                     Station[]               @relation("UserStations")
-  supervisedStations           Station[]               @relation("StationSupervisor")
-  stationSupervisorAssignments StationSupervisor[]     @relation("StationSupervisorAssignments")
-  supervisedSubsections        Subsection[]            @relation("SubsectionSupervisor")
-  supervisedCables             Cable[]                 @relation("CableSupervisor")
-  supervisedLocations          Location[]              @relation("LocationSupervisor")
-  equipmentsCreated            Equipment[]             @relation("UserEquipments")
-  maintenanceSchedules         MaintenanceSchedule[]   @relation("MaintenanceScheduleCreatedBy")
-  assignedMaintenanceSchedules MaintenanceSchedule[]   @relation("MaintenanceScheduleSupervisor")
-  maintenanceCompletions       MaintenanceOccurrence[] @relation("MaintenanceOccurrenceCompletedBy")
+  EcSocketsTestedWithMe           EcTesting[]             @relation("TestroomVerificationAssignment")
+  movements                       DailyMovement[]
+  inspectionNotes                 InspectionNote[]
+  stations                        Station[]               @relation("UserStations")
+  supervisedStations              Station[]               @relation("StationSupervisor")
+  stationSupervisorAssignments    StationSupervisor[]     @relation("StationSupervisorAssignments")
+  supervisedSubsections           Subsection[]            @relation("SubsectionSupervisor")
+  supervisedCables                Cable[]                 @relation("CableSupervisor")
+  supervisedLocations             Location[]              @relation("LocationSupervisor")
+  equipmentsCreated               Equipment[]             @relation("UserEquipments")
+  maintenanceSchedules            MaintenanceSchedule[]   @relation("MaintenanceScheduleCreatedBy")
+  assignedMaintenanceSchedules    MaintenanceSchedule[]   @relation("MaintenanceScheduleSupervisor")
+  maintenanceCompletions          MaintenanceOccurrence[] @relation("MaintenanceOccurrenceCompletedBy")
   escalatedMaintenanceOccurrences MaintenanceOccurrence[] @relation("MaintenanceOccurrenceEscalatedTo")
-  tnpItems                     TnpItem[]               @relation("TnpCreatedBy")
-  circuitAudits                CircuitAuditLog[]
-  createdDivisionCircuitMasters DivisionCircuitMaster[] @relation("DivisionCircuitMasterCreatedBy")
-  maintainedStationCircuits    StationCircuit[]        @relation("StationCircuitMaintainedBy")
-  requestedStationCircuits     StationCircuit[]        @relation("StationCircuitRequestedBy")
-  approvedStationCircuits      StationCircuit[]        @relation("StationCircuitApprovedBy")
-  createdEscalationMatrices    EscalationMatrix[]      @relation("EscalationMatrixCreatedBy")
-  createdWorkExecutions        WorkExecution[]         @relation("WorkExecutionCreatedBy")
-  consignedWorkExecutions      WorkExecution[]         @relation("WorkExecutionConsignee")
-  createdWorkDemandRounds      WorkDemandRound[]       @relation("WorkDemandRoundCreatedBy")
-  submittedWorkDemands         WorkDemandEntry[]       @relation("WorkDemandRequestedBy")
-  workProgressEntries          WorkProgressEntry[]     @relation("WorkProgressReportedBy")
-  workAllocationsGiven         WorkAllocationEntry[]   @relation("WorkAllocationAllocatedBy")
-  workAllocationsAssigned      WorkAllocationEntry[]   @relation("WorkAllocationAllocatedTo")
-  createdCableJoints           Joint[]                 @relation("CableJointCreatedBy")
-  createdAt                    DateTime                @default(now())
-  updatedAt                    DateTime                @updatedAt
+  tnpItems                        TnpItem[]               @relation("TnpCreatedBy")
+  circuitAudits                   CircuitAuditLog[]
+  createdDivisionCircuitMasters   DivisionCircuitMaster[] @relation("DivisionCircuitMasterCreatedBy")
+  maintainedStationCircuits       StationCircuit[]        @relation("StationCircuitMaintainedBy")
+  requestedStationCircuits        StationCircuit[]        @relation("StationCircuitRequestedBy")
+  approvedStationCircuits         StationCircuit[]        @relation("StationCircuitApprovedBy")
+  createdEscalationMatrices       EscalationMatrix[]      @relation("EscalationMatrixCreatedBy")
+  createdWorkExecutions           WorkExecution[]         @relation("WorkExecutionCreatedBy")
+  consignedWorkExecutions         WorkExecution[]         @relation("WorkExecutionConsignee")
+  createdWorkDemandRounds         WorkDemandRound[]       @relation("WorkDemandRoundCreatedBy")
+  submittedWorkDemands            WorkDemandEntry[]       @relation("WorkDemandRequestedBy")
+  workProgressEntries             WorkProgressEntry[]     @relation("WorkProgressReportedBy")
+  workAllocationsGiven            WorkAllocationEntry[]   @relation("WorkAllocationAllocatedBy")
+  workAllocationsAssigned         WorkAllocationEntry[]   @relation("WorkAllocationAllocatedTo")
+  createdCableJoints              Joint[]                 @relation("CableJointCreatedBy")
+  dailyReportInputsSubmitted      DailyReportInput[]      @relation("DailyReportInputSubmittedBy")
+  dailyReportInputsForUser        DailyReportInput[]      @relation("DailyReportInputForUser")
+  dailyReportRunsGenerated        DailyReportRun[]        @relation("DailyReportRunGeneratedBy")
+  createdAt                       DateTime                @default(now())
+  updatedAt                       DateTime                @updatedAt
 }
 
 model EscalationMatrix {
@@ -467,9 +500,9 @@ model EscalationMatrix {
 }
 
 model WorkExecution {
-  id                     String              @id @default(uuid())
+  id                     String                         @id @default(uuid())
   divisionId             String
-  division               Division            @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  division               Division                       @relation(fields: [divisionId], references: [id], onDelete: Cascade)
   loaNo                  String
   loaDate                DateTime?
   title                  String
@@ -480,11 +513,11 @@ model WorkExecution {
   plannedStartDate       DateTime?
   plannedEndDate         DateTime?
   engineerIncharge       String?
-  status                 WorkExecutionStatus @default(DRAFT_ITEMS)
+  status                 WorkExecutionStatus            @default(DRAFT_ITEMS)
   consigneeId            String
-  consignee              User                @relation("WorkExecutionConsignee", fields: [consigneeId], references: [id])
+  consignee              User                           @relation("WorkExecutionConsignee", fields: [consigneeId], references: [id])
   createdById            String
-  createdBy              User                @relation("WorkExecutionCreatedBy", fields: [createdById], references: [id])
+  createdBy              User                           @relation("WorkExecutionCreatedBy", fields: [createdById], references: [id])
   items                  WorkExecutionItem[]
   stationScopes          WorkExecutionStationScope[]
   subsectionScopes       WorkExecutionSubsectionScope[]
@@ -492,75 +525,75 @@ model WorkExecution {
   demands                WorkDemandEntry[]
   progressEntries        WorkProgressEntry[]
   allocations            WorkAllocationEntry[]
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
 
-  @@index([divisionId, status])
   @@unique([divisionId, loaNo])
+  @@index([divisionId, status])
 }
 
 model WorkExecutionItem {
-  id             String           @id @default(uuid())
-  workId         String
-  work           WorkExecution    @relation(fields: [workId], references: [id], onDelete: Cascade)
-  lineNo         Int?
-  scheduleCode   String?
-  itemCode       String?
-  itemName       String
-  rawDescription String?
-  category       WorkItemCategory @default(OTHER)
-  uom            String
-  plannedQty     Float            @default(0)
-  unitRate       Float?
-  plannedAmount  Float?
-  isActive       Boolean          @default(true)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  demands        WorkDemandEntry[]
+  id              String                @id @default(uuid())
+  workId          String
+  work            WorkExecution         @relation(fields: [workId], references: [id], onDelete: Cascade)
+  lineNo          Int?
+  scheduleCode    String?
+  itemCode        String?
+  itemName        String
+  rawDescription  String?
+  category        WorkItemCategory      @default(OTHER)
+  uom             String
+  plannedQty      Float                 @default(0)
+  unitRate        Float?
+  plannedAmount   Float?
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  demands         WorkDemandEntry[]
   progressEntries WorkProgressEntry[]
-  allocations    WorkAllocationEntry[]
+  allocations     WorkAllocationEntry[]
 
   @@index([workId, isActive])
 }
 
 model WorkDemandRound {
-  id          String                @id @default(uuid())
-  workId      String
-  work        WorkExecution         @relation(fields: [workId], references: [id], onDelete: Cascade)
-  name        String
-  notes       String?
-  status      WorkDemandRoundStatus @default(OPEN)
-  opensAt     DateTime?             @default(now())
-  closesAt    DateTime?
-  createdById String
-  createdBy   User                  @relation("WorkDemandRoundCreatedBy", fields: [createdById], references: [id])
-  demands     WorkDemandEntry[]
+  id              String                @id @default(uuid())
+  workId          String
+  work            WorkExecution         @relation(fields: [workId], references: [id], onDelete: Cascade)
+  name            String
+  notes           String?
+  status          WorkDemandRoundStatus @default(OPEN)
+  opensAt         DateTime?             @default(now())
+  closesAt        DateTime?
+  createdById     String
+  createdBy       User                  @relation("WorkDemandRoundCreatedBy", fields: [createdById], references: [id])
+  demands         WorkDemandEntry[]
   progressEntries WorkProgressEntry[]
-  allocations WorkAllocationEntry[]
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  allocations     WorkAllocationEntry[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   @@index([workId, status])
 }
 
 model WorkDemandEntry {
-  id            String          @id @default(uuid())
+  id            String            @id @default(uuid())
   workId        String
-  work          WorkExecution   @relation(fields: [workId], references: [id], onDelete: Cascade)
+  work          WorkExecution     @relation(fields: [workId], references: [id], onDelete: Cascade)
   roundId       String
-  round         WorkDemandRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  round         WorkDemandRound   @relation(fields: [roundId], references: [id], onDelete: Cascade)
   itemId        String
   item          WorkExecutionItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   requestedById String
-  requestedBy   User            @relation("WorkDemandRequestedBy", fields: [requestedById], references: [id])
+  requestedBy   User              @relation("WorkDemandRequestedBy", fields: [requestedById], references: [id])
   stationId     String?
-  station       Station?        @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  station       Station?          @relation(fields: [stationId], references: [id], onDelete: SetNull)
   subsectionId  String?
-  subsection    Subsection?     @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
-  requestedQty  Float           @default(0)
+  subsection    Subsection?       @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
+  requestedQty  Float             @default(0)
   remarks       String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@index([workId, roundId, requestedById])
   @@index([itemId])
@@ -597,25 +630,25 @@ model WorkAllocationEntry {
 
 model WorkProgressEntry {
   id                String            @id @default(uuid())
-  workId             String
-  work               WorkExecution     @relation(fields: [workId], references: [id], onDelete: Cascade)
-  roundId            String?
-  round              WorkDemandRound?  @relation(fields: [roundId], references: [id], onDelete: SetNull)
-  itemId             String
-  item               WorkExecutionItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  reportedById       String
-  reportedBy         User              @relation("WorkProgressReportedBy", fields: [reportedById], references: [id])
-  stationId          String?
-  station            Station?          @relation(fields: [stationId], references: [id], onDelete: SetNull)
-  subsectionId       String?
-  subsection         Subsection?       @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
-  quantity           Float             @default(0)
-  remarks            String?
-  linkedEquipmentId  String?
-  linkedEquipment    Equipment?        @relation(fields: [linkedEquipmentId], references: [id], onDelete: SetNull)
-  progressDate       DateTime          @default(now())
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  workId            String
+  work              WorkExecution     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  roundId           String?
+  round             WorkDemandRound?  @relation(fields: [roundId], references: [id], onDelete: SetNull)
+  itemId            String
+  item              WorkExecutionItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  reportedById      String
+  reportedBy        User              @relation("WorkProgressReportedBy", fields: [reportedById], references: [id])
+  stationId         String?
+  station           Station?          @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  subsectionId      String?
+  subsection        Subsection?       @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
+  quantity          Float             @default(0)
+  remarks           String?
+  linkedEquipmentId String?
+  linkedEquipment   Equipment?        @relation(fields: [linkedEquipmentId], references: [id], onDelete: SetNull)
+  progressDate      DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   @@index([workId, itemId])
   @@index([roundId])
@@ -951,8 +984,8 @@ model Failure {
   cause CauseOfFailure?
 
   // Geographic Context
-  locationId   String?
-  location     Location?   @relation(fields: [locationId], references: [id])
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
 
   stationId String? // Add this back if you want direct Station access
   station   Station? @relation(fields: [stationId], references: [id])
@@ -961,9 +994,9 @@ model Failure {
   cableCutId String?   @unique
   cableCut   CableCut? @relation(fields: [cableCutId], references: [id])
 
-  failureInTime  DateTime?
-  isHqRepeated   Boolean   @default(false)
-  isIcmsRepeated Boolean   @default(false)
+  failureInTime   DateTime?
+  isHqRepeated    Boolean   @default(false)
+  isIcmsRepeated  Boolean   @default(false)
   restorationTime DateTime?
   remarks         String?
 }
@@ -1116,31 +1149,31 @@ model CableCut {
 }
 
 model CableTestReport {
-  id                     String             @id @default(uuid())
-  cableId                String
-  cable                  Cable              @relation(fields: [cableId], references: [id])
-  testedById             String
-  testedBy               User               @relation("Tester", fields: [testedById], references: [id])
-  testDate               DateTime           @default(now())
-  measuredOn             DateTime?
-  testCause              CableTestingCause  @default(SCHEDULED)
-  sectionName            String?
-  blockSectionName       String?
-  cableRouteDistanceKm   Float?
-  sectionLengthKm        Float?
-  measuredAtStationId    String?
-  measuredAtStation      Station?           @relation("CableTestMeasuredAtStation", fields: [measuredAtStationId], references: [id])
+  id                       String                   @id @default(uuid())
+  cableId                  String
+  cable                    Cable                    @relation(fields: [cableId], references: [id])
+  testedById               String
+  testedBy                 User                     @relation("Tester", fields: [testedById], references: [id])
+  testDate                 DateTime                 @default(now())
+  measuredOn               DateTime?
+  testCause                CableTestingCause        @default(SCHEDULED)
+  sectionName              String?
+  blockSectionName         String?
+  cableRouteDistanceKm     Float?
+  sectionLengthKm          Float?
+  measuredAtStationId      String?
+  measuredAtStation        Station?                 @relation("CableTestMeasuredAtStation", fields: [measuredAtStationId], references: [id])
   calculatedLoopResistance Float?
-  calculatedAttenuation  Float?
-  insulationRes          String?
-  dbLoss                 Float?
-  overallRemarks         String?
-  isAckByIncharge        Boolean            @default(false)
-  ackByInchargeById      String?
-  ackByInchargeBy        User?              @relation("TestAck", fields: [ackByInchargeById], references: [id])
-  measuredValues         CableTestMeasuredValue[]
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  calculatedAttenuation    Float?
+  insulationRes            String?
+  dbLoss                   Float?
+  overallRemarks           String?
+  isAckByIncharge          Boolean                  @default(false)
+  ackByInchargeById        String?
+  ackByInchargeBy          User?                    @relation("TestAck", fields: [ackByInchargeById], references: [id])
+  measuredValues           CableTestMeasuredValue[]
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
 
   @@index([cableId, testDate])
   @@index([measuredAtStationId])
@@ -1200,97 +1233,97 @@ model Joint {
 }
 
 model MaintenanceSchedule {
-  id               String                    @id @default(uuid())
-  title            String
-  scheduleType     MaintenanceScheduleType   @default(CUSTOM)
-  targetScope      MaintenanceTargetScope    @default(STATION)
-  description      String?
-  frequency        Frequency                 @default(MONTHLY)
-  jointFrequency   Frequency?
-  isJointSchedule  Boolean                   @default(false)
-  jointDepartment  String?
-  nextDueDate      DateTime
-  allowedVarianceDays Int                    @default(5)
-  remindBeforeDays Int?
-  escalationRole   UserRole                  @default(SSE_TELE_INCHARGE)
-  status           MaintenanceScheduleStatus @default(ACTIVE)
-  stationId        String
-  station          Station                   @relation(fields: [stationId], references: [id])
-  subsectionId     String?
-  subsection       Subsection?               @relation(fields: [subsectionId], references: [id])
-  equipmentId      String?
-  equipment        Equipment?                @relation(fields: [equipmentId], references: [id])
-  locationId       String?
-  location         Location?                 @relation(fields: [locationId], references: [id])
-  createdById      String?
-  createdBy        User?                     @relation("MaintenanceScheduleCreatedBy", fields: [createdById], references: [id])
-  supervisorId     String
-  supervisor       User                      @relation("MaintenanceScheduleSupervisor", fields: [supervisorId], references: [id])
-  occurrences      MaintenanceOccurrence[]
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @default(now()) @updatedAt
+  id                  String                    @id @default(uuid())
+  title               String
+  scheduleType        MaintenanceScheduleType   @default(CUSTOM)
+  targetScope         MaintenanceTargetScope    @default(STATION)
+  description         String?
+  frequency           Frequency                 @default(MONTHLY)
+  jointFrequency      Frequency?
+  isJointSchedule     Boolean                   @default(false)
+  jointDepartment     String?
+  nextDueDate         DateTime
+  allowedVarianceDays Int                       @default(5)
+  remindBeforeDays    Int?
+  escalationRole      UserRole                  @default(SSE_TELE_INCHARGE)
+  status              MaintenanceScheduleStatus @default(ACTIVE)
+  stationId           String
+  station             Station                   @relation(fields: [stationId], references: [id])
+  subsectionId        String?
+  subsection          Subsection?               @relation(fields: [subsectionId], references: [id])
+  equipmentId         String?
+  equipment           Equipment?                @relation(fields: [equipmentId], references: [id])
+  locationId          String?
+  location            Location?                 @relation(fields: [locationId], references: [id])
+  createdById         String?
+  createdBy           User?                     @relation("MaintenanceScheduleCreatedBy", fields: [createdById], references: [id])
+  supervisorId        String
+  supervisor          User                      @relation("MaintenanceScheduleSupervisor", fields: [supervisorId], references: [id])
+  occurrences         MaintenanceOccurrence[]
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @default(now()) @updatedAt
 }
 
 model MaintenanceOccurrence {
-  id            String                      @id @default(uuid())
-  scheduleId    String
-  schedule      MaintenanceSchedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  dueDate       DateTime
-  status        MaintenanceOccurrenceStatus @default(OPEN)
-  completedAt   DateTime?
-  completedById String?
-  completedBy   User?                       @relation("MaintenanceOccurrenceCompletedBy", fields: [completedById], references: [id])
-  jointDoneWithName        String?
-  jointDoneWithDesignation String?
-  jointDoneWithDepartment  String?
-  escalatedAt              DateTime?
-  escalatedToId            String?
-  escalatedTo              User?            @relation("MaintenanceOccurrenceEscalatedTo", fields: [escalatedToId], references: [id])
+  id                           String                      @id @default(uuid())
+  scheduleId                   String
+  schedule                     MaintenanceSchedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  dueDate                      DateTime
+  status                       MaintenanceOccurrenceStatus @default(OPEN)
+  completedAt                  DateTime?
+  completedById                String?
+  completedBy                  User?                       @relation("MaintenanceOccurrenceCompletedBy", fields: [completedById], references: [id])
+  jointDoneWithName            String?
+  jointDoneWithDesignation     String?
+  jointDoneWithDepartment      String?
+  escalatedAt                  DateTime?
+  escalatedToId                String?
+  escalatedTo                  User?                       @relation("MaintenanceOccurrenceEscalatedTo", fields: [escalatedToId], references: [id])
   inspectionChecklistSnapshot  Json?
   inspectionChecklistResponses Json?
-  remarks       String?
-  proofUrls     String[]                    @default([])
-  createdAt     DateTime                    @default(now())
+  remarks                      String?
+  proofUrls                    String[]                    @default([])
+  createdAt                    DateTime                    @default(now())
 }
 
 model DivisionCircuitMaster {
-  id             String   @id @default(uuid())
-  code           String
-  name           String
-  description    String?
+  id              String           @id @default(uuid())
+  code            String
+  name            String
+  description     String?
   checklistSchema Json
-  isActive       Boolean  @default(true)
-  divisionId     String
-  division       Division @relation(fields: [divisionId], references: [id])
-  createdById    String
-  createdBy      User     @relation("DivisionCircuitMasterCreatedBy", fields: [createdById], references: [id])
+  isActive        Boolean          @default(true)
+  divisionId      String
+  division        Division         @relation(fields: [divisionId], references: [id])
+  createdById     String
+  createdBy       User             @relation("DivisionCircuitMasterCreatedBy", fields: [createdById], references: [id])
   stationCircuits StationCircuit[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@unique([divisionId, code])
 }
 
 model StationCircuit {
-  id                String             @id @default(uuid())
-  stationId         String
-  station           Station            @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  locationId        String?
-  location          Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  circuitMasterId   String
-  circuitMaster     DivisionCircuitMaster @relation(fields: [circuitMasterId], references: [id], onDelete: Cascade)
-  identifier        String?
-  maintainedById    String
-  maintainedBy      User               @relation("StationCircuitMaintainedBy", fields: [maintainedById], references: [id])
-  requestedById     String
-  requestedBy       User               @relation("StationCircuitRequestedBy", fields: [requestedById], references: [id])
-  status            StationCircuitStatus @default(PENDING)
-  approvedById      String?
-  approvedBy        User?              @relation("StationCircuitApprovedBy", fields: [approvedById], references: [id])
-  approvedAt        DateTime?
-  rejectionReason   String?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id              String                @id @default(uuid())
+  stationId       String
+  station         Station               @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  locationId      String?
+  location        Location?             @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  circuitMasterId String
+  circuitMaster   DivisionCircuitMaster @relation(fields: [circuitMasterId], references: [id], onDelete: Cascade)
+  identifier      String?
+  maintainedById  String
+  maintainedBy    User                  @relation("StationCircuitMaintainedBy", fields: [maintainedById], references: [id])
+  requestedById   String
+  requestedBy     User                  @relation("StationCircuitRequestedBy", fields: [requestedById], references: [id])
+  status          StationCircuitStatus  @default(PENDING)
+  approvedById    String?
+  approvedBy      User?                 @relation("StationCircuitApprovedBy", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   @@index([stationId, status])
   @@index([maintainedById])
@@ -1316,21 +1349,21 @@ model DailyMovement {
 }
 
 model Location {
-  id                   String                @id @default(uuid())
-  name                 String
-  description          String
-  stationId            String
-  supervisorId         String
-  failures             Failure[]
-  maintenances         Maintenance[]
-  maintenanceSchedules MaintenanceSchedule[]
-  tnpItems             TnpItem[]
-  stationCircuits      StationCircuit[]
-  station              Station               @relation(fields: [stationId], references: [id], onDelete: Cascade)
-  supervisor           User                  @relation("LocationSupervisor", fields: [supervisorId], references: [id])
-  outgoingStationCables StationCable[]       @relation("StationCableFromLocation")
-  incomingStationCables StationCable[]       @relation("StationCableToLocation")
-  racks                Rack[]
+  id                    String                @id @default(uuid())
+  name                  String
+  description           String
+  stationId             String
+  supervisorId          String
+  failures              Failure[]
+  maintenances          Maintenance[]
+  maintenanceSchedules  MaintenanceSchedule[]
+  tnpItems              TnpItem[]
+  stationCircuits       StationCircuit[]
+  station               Station               @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  supervisor            User                  @relation("LocationSupervisor", fields: [supervisorId], references: [id])
+  outgoingStationCables StationCable[]        @relation("StationCableFromLocation")
+  incomingStationCables StationCable[]        @relation("StationCableToLocation")
+  racks                 Rack[]
 
   @@index([stationId])
   @@index([supervisorId])
@@ -1416,4 +1449,62 @@ model Maintenance {
   equipment   Equipment? @relation(fields: [equipmentId], references: [id])
 
   remarks String?
+}
+
+model DailyReportInput {
+  id                       String                 @id @default(uuid())
+  divisionId               String
+  division                 Division               @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  reportDate               DateTime
+  sectionType              DailyReportSectionType
+  stationId                String?
+  station                  Station?               @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  subsectionId             String?
+  subsection               Subsection?            @relation(fields: [subsectionId], references: [id], onDelete: SetNull)
+  entryTitle               String
+  entryDetails             String                 @db.Text
+  dynamicFields            Json?
+  entryStatus              String?
+  failureInTime            DateTime?
+  restorationTime          DateTime?
+  targetDate               DateTime?
+  complianceDate           DateTime?
+  informedTo               String?
+  responsibleDept          String?
+  isFallbackEntry          Boolean                @default(false)
+  sourceType               DailyInputSourceType   @default(FIELD_APP)
+  sourceContactName        String?
+  sourceContactDesignation String?
+  sourceContactChannel     String?
+  submittedById            String
+  submittedBy              User                   @relation("DailyReportInputSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+  inputForUserId           String?
+  inputForUser             User?                  @relation("DailyReportInputForUser", fields: [inputForUserId], references: [id], onDelete: SetNull)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+
+  @@index([divisionId, reportDate])
+  @@index([sectionType, reportDate])
+  @@index([submittedById, reportDate])
+  @@index([inputForUserId, reportDate])
+  @@index([stationId, subsectionId])
+}
+
+model DailyReportRun {
+  id            String                  @id @default(uuid())
+  divisionId    String
+  division      Division                @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  reportDate    DateTime
+  format        DailyReportExportFormat
+  filters       Json?
+  summary       Json?
+  entryCount    Int                     @default(0)
+  failureCount  Int                     @default(0)
+  fileName      String?
+  generatedById String
+  generatedBy   User                    @relation("DailyReportRunGeneratedBy", fields: [generatedById], references: [id], onDelete: Cascade)
+  createdAt     DateTime                @default(now())
+
+  @@index([divisionId, reportDate])
+  @@index([generatedById, createdAt])
 }
