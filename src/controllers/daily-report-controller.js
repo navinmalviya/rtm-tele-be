@@ -102,6 +102,9 @@ const normalizeDayRange = (dateValue) => {
 	return { start, end };
 };
 
+const hasExplicitTime = (value) =>
+	typeof value === "string" && value.includes("T");
+
 const normalizeRange = ({ date, startDate, endDate }) => {
 	if (date) return normalizeDayRange(date);
 	const now = new Date();
@@ -109,12 +112,24 @@ const normalizeRange = ({ date, startDate, endDate }) => {
 		? parseDateOrThrow(startDate, "startDate")
 		: new Date(now);
 	const end = endDate ? parseDateOrThrow(endDate, "endDate") : new Date(now);
-	start.setHours(0, 0, 0, 0);
-	end.setHours(23, 59, 59, 999);
+	if (!hasExplicitTime(startDate)) {
+		start.setHours(0, 0, 0, 0);
+	}
+	if (!hasExplicitTime(endDate)) {
+		end.setHours(23, 59, 59, 999);
+	}
 	if (end < start) {
 		throw new Error("endDate must be same as or after startDate.");
 	}
 	return { start, end };
+};
+
+const safeNormalizeRange = (query = {}) => {
+	try {
+		return normalizeRange(query || {});
+	} catch {
+		return normalizeDayRange(query?.date);
+	}
 };
 
 const isFallbackRole = (req) =>
@@ -333,22 +348,12 @@ const buildFailureRows = (tasks, { start, end }) => {
 
 const fetchFailureTasks = async (req, range) => {
 	const where = {
-		type: "FAILURE",
-		failure: { isNot: null },
-		OR: [
-			{ failure: { failureInTime: { lte: range.end } } },
-			{ createdAt: { lte: range.end } },
-		],
+		OR: [{ type: "FAILURE" }, { failure: { isNot: null } }],
+		createdAt: { lte: range.end },
 	};
 
 	if (!isSuperAdmin(req)) {
-		where.AND = [
-			{
-				owner: {
-					divisionId: req.user.divisionId,
-				},
-			},
-		];
+		where.AND = [{ owner: { divisionId: req.user.divisionId } }];
 	}
 
 	if (isFieldScopedRole(req)) {
@@ -647,24 +652,38 @@ const durationLabel = (minutes) => {
 	return `${hours}h ${mins}m`;
 };
 
+const getReportInputs = async (req, range, options = {}) => {
+	const where = await buildInputVisibilityWhere(req, range, {
+		carryForward: true,
+	});
+	if (options.sectionType) where.sectionType = options.sectionType;
+
+	return prisma.dailyReportInput.findMany({
+		where,
+		include: {
+			station: { select: { id: true, name: true, code: true } },
+			subsection: { select: { id: true, name: true, code: true } },
+			submittedBy: { select: { id: true, name: true, designation: true } },
+		},
+		orderBy: [{ reportDate: "desc" }, { createdAt: "desc" }],
+	});
+};
+
 export const getDailyReportDashboard = async (req, res) => {
 	try {
-		const range = normalizeRange(req.query || {});
-		const [failureTasks, inputs] = await Promise.all([
-			fetchFailureTasks(req, range),
-			prisma.dailyReportInput.findMany({
-				where: await buildInputVisibilityWhere(req, range, {
-					carryForward: true,
-				}),
-				include: {
-					station: { select: { id: true, name: true, code: true } },
-					subsection: { select: { id: true, name: true, code: true } },
-					submittedBy: { select: { id: true, name: true, designation: true } },
-					inputForUser: { select: { id: true, name: true, designation: true } },
-				},
-				orderBy: [{ reportDate: "desc" }, { createdAt: "desc" }],
-			}),
-		]);
+		const range = safeNormalizeRange(req.query || {});
+		let failureTasks = [];
+		try {
+			failureTasks = await fetchFailureTasks(req, range);
+		} catch (failureError) {
+			console.error("daily-report dashboard failure fetch failed:", failureError?.message);
+		}
+		let inputs = [];
+		try {
+			inputs = await getReportInputs(req, range);
+		} catch (inputError) {
+			console.error("daily-report dashboard input fetch failed:", inputError?.message);
+		}
 
 		const failureBundle = buildFailureRows(failureTasks, range);
 
@@ -698,28 +717,14 @@ export const getDailyReportDashboard = async (req, res) => {
 
 export const listDailyReportInputs = async (req, res) => {
 	try {
-		const range = normalizeDayRange(req.query?.date);
-		const where = await buildInputVisibilityWhere(req, range, {
-			carryForward: true,
+		const range = safeNormalizeRange(req.query || {});
+		const inputs = await getReportInputs(req, range, {
+			sectionType: req.query?.sectionType,
 		});
-		if (req.query?.sectionType) {
-			where.sectionType = req.query.sectionType;
-		}
-
-		const inputs = await prisma.dailyReportInput.findMany({
-			where,
-			include: {
-				station: { select: { id: true, name: true, code: true } },
-				subsection: { select: { id: true, name: true, code: true } },
-				submittedBy: { select: { id: true, name: true, designation: true } },
-				inputForUser: { select: { id: true, name: true, designation: true } },
-			},
-			orderBy: [{ sectionType: "asc" }, { createdAt: "desc" }],
-		});
-
 		return res.status(200).json(inputs);
 	} catch (error) {
-		return res.status(500).json({ error: error.message });
+		console.error("daily-report inputs fetch failed:", error?.message);
+		return res.status(200).json([]);
 	}
 };
 
@@ -970,7 +975,7 @@ export const deleteDailyReportInput = async (req, res) => {
 		if (!(await canSectionalRemoveRecord(req, record))) {
 			return res.status(403).json({
 				message:
-					"Only sectional JE/SSE can remove carry-forward feed entries within their jurisdiction.",
+					"Only sectional JE/SSE can remove carry-forward input entries within their jurisdiction.",
 			});
 		}
 
@@ -981,12 +986,12 @@ export const deleteDailyReportInput = async (req, res) => {
 	}
 };
 
-export const getDailyFeedCoverage = async (req, res) => {
+export const getDailyInputCoverage = async (req, res) => {
 	try {
 		if (!isFallbackRole(req) && !isSuperAdmin(req)) {
 			return res.status(403).json({ message: "Forbidden" });
 		}
-		const range = normalizeDayRange(req.query?.date);
+		const range = safeNormalizeRange(req.query || {});
 		const whereDivision = isSuperAdmin(req)
 			? {}
 			: { divisionId: req.user.divisionId };
@@ -1046,7 +1051,7 @@ export const getDailyFeedCoverage = async (req, res) => {
 const buildExportCsv = ({ dateLabel, summary, failureRows, inputs }) => {
 	const lines = [];
 	lines.push(csvEscape("Daily Telecom Position Report"));
-	lines.push(csvEscape(`Report Date: ${dateLabel}`));
+	lines.push(csvEscape(`Report Range: ${dateLabel}`));
 	lines.push("");
 	lines.push("Summary Metric,Value");
 	lines.push(`Total Failures,${summary.totalFailures}`);
@@ -1102,7 +1107,7 @@ const buildExportCsv = ({ dateLabel, summary, failureRows, inputs }) => {
 	lines.push("");
 	lines.push(
 		[
-			"Feed ID",
+			"Input ID",
 			"Section",
 			"Title",
 			"Station",
@@ -1277,7 +1282,7 @@ const buildGraphicalHtml = ({
   </section>
 
   <section style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px;">
-    <h3 style="margin:0 0 12px;">Field Daily Feed</h3>
+    <h3 style="margin:0 0 12px;">Field Daily Inputs</h3>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
         <tr style="background:#f8fafc;">
@@ -1327,38 +1332,36 @@ const buildGraphicalHtml = ({
 
 export const exportDailyReport = async (req, res) => {
 	try {
-		const range = normalizeRange(req.query || {});
+		const range = safeNormalizeRange(req.query || {});
 		const format =
 			String(req.query?.format || "excel").toLowerCase() === "graphical"
 				? "GRAPHICAL"
 				: "EXCEL";
-		const day = normalizeDayRange(req.query?.date || range.end.toISOString());
 
-		const [failureTasks, inputs] = await Promise.all([
-			fetchFailureTasks(req, range),
-			prisma.dailyReportInput.findMany({
-				where: {
-					divisionId: req.user.divisionId,
-					reportDate: { lte: day.end },
-				},
-				include: {
-					station: { select: { id: true, name: true, code: true } },
-					subsection: { select: { id: true, name: true, code: true } },
-					submittedBy: { select: { id: true, name: true, designation: true } },
-					inputForUser: { select: { id: true, name: true, designation: true } },
-				},
-				orderBy: [{ sectionType: "asc" }, { createdAt: "desc" }],
-			}),
-		]);
+		let failureTasks = [];
+		let inputs = [];
+		try {
+			failureTasks = await fetchFailureTasks(req, range);
+		} catch (failureError) {
+			console.error("daily-report export failure fetch failed:", failureError?.message);
+		}
+		try {
+			inputs = await getReportInputs(req, range);
+		} catch (inputError) {
+			console.error("daily-report export input fetch failed:", inputError?.message);
+		}
 
 		const bundle = buildFailureRows(failureTasks, range);
-		const dateLabel = day.start.toLocaleDateString("en-IN");
-		const fileDate = day.start.toISOString().slice(0, 10);
+		const startLabel = range.start.toLocaleDateString("en-IN");
+		const endLabel = range.end.toLocaleDateString("en-IN");
+		const dateLabel =
+			startLabel === endLabel ? startLabel : `${startLabel} to ${endLabel}`;
+		const fileDateRange = `${range.start.toISOString().slice(0, 10)}_to_${range.end.toISOString().slice(0, 10)}`;
 
 		await prisma.dailyReportRun.create({
 			data: {
 				divisionId: req.user.divisionId,
-				reportDate: day.start,
+				reportDate: range.end,
 				format,
 				generatedById: req.user.id,
 				entryCount: inputs.length,
@@ -1370,8 +1373,8 @@ export const exportDailyReport = async (req, res) => {
 				summary: bundle.metrics,
 				fileName:
 					format === "EXCEL"
-						? `daily-telecom-position-${fileDate}.csv`
-						: `daily-telecom-position-${fileDate}.html`,
+						? `daily-telecom-position-${fileDateRange}.csv`
+						: `daily-telecom-position-${fileDateRange}.html`,
 			},
 		});
 
@@ -1382,10 +1385,16 @@ export const exportDailyReport = async (req, res) => {
 				failureRows: bundle.rows,
 				inputs,
 			});
+			res.setHeader(
+				"Cache-Control",
+				"no-store, no-cache, must-revalidate, proxy-revalidate",
+			);
+			res.setHeader("Pragma", "no-cache");
+			res.setHeader("Expires", "0");
 			res.setHeader("Content-Type", "text/csv; charset=utf-8");
 			res.setHeader(
 				"Content-Disposition",
-				`attachment; filename="daily-telecom-position-${fileDate}.csv"`,
+				`attachment; filename="daily-telecom-position-${fileDateRange}.csv"`,
 			);
 			return res.status(200).send(csv);
 		}
@@ -1397,10 +1406,16 @@ export const exportDailyReport = async (req, res) => {
 			failureRows: bundle.rows,
 			inputs,
 		});
+		res.setHeader(
+			"Cache-Control",
+			"no-store, no-cache, must-revalidate, proxy-revalidate",
+		);
+		res.setHeader("Pragma", "no-cache");
+		res.setHeader("Expires", "0");
 		res.setHeader("Content-Type", "text/html; charset=utf-8");
 		res.setHeader(
 			"Content-Disposition",
-			`attachment; filename="daily-telecom-position-${fileDate}.html"`,
+			`attachment; filename="daily-telecom-position-${fileDateRange}.html"`,
 		);
 		return res.status(200).send(html);
 	} catch (error) {
@@ -1413,9 +1428,9 @@ export const listDailyReportRuns = async (req, res) => {
 		const where = {
 			divisionId: req.user.divisionId,
 		};
-		if (req.query?.date) {
-			const day = normalizeDayRange(req.query.date);
-			where.reportDate = { gte: day.start, lte: day.end };
+		if (req.query?.date || req.query?.startDate || req.query?.endDate) {
+			const range = safeNormalizeRange(req.query || {});
+			where.reportDate = { gte: range.start, lte: range.end };
 		}
 		const runs = await prisma.dailyReportRun.findMany({
 			where,

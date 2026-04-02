@@ -3,7 +3,7 @@ import {
 	createDailyReportInput,
 	deleteDailyReportInput,
 	exportDailyReport,
-	getDailyFeedCoverage,
+	getDailyInputCoverage,
 	getDailyReportDashboard,
 	listDailyReportInputs,
 	listDailyReportRuns,
@@ -54,7 +54,7 @@ router.get(
 	"/coverage",
 	verifyToken,
 	allowRoles(["SUPER_ADMIN", "ADMIN", "TESTROOM"]),
-	getDailyFeedCoverage,
+	getDailyInputCoverage,
 );
 
 router.get(

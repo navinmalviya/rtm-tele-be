@@ -3,6 +3,7 @@ import {
 	buildStationVisibilityWhere,
 	buildSubsectionVisibilityWhere,
 	buildTaskVisibilityOr,
+	getEffectiveRole,
 	isFieldScopedRole,
 	isSuperAdmin,
 } from "../lib/access-scope.js";
@@ -25,6 +26,14 @@ const parseBoolean = (value, fallback = undefined) => {
 	if (value === false || value === "false" || value === 0 || value === "0") return false;
 	return fallback;
 };
+
+const FAILURE_TIME_LOCKED_ROLES = new Set([
+	"FIELD_ENGINEER",
+	"JE_SSE_TELE_SECTIONAL",
+	"JE_SECTIONAL",
+	"SSE_SECTIONAL",
+	"SSE_TELE_INCHARGE",
+]);
 
 const getScopedStationAndSubsectionIds = async (req) => {
 	if (!isFieldScopedRole(req)) {
@@ -534,6 +543,7 @@ export const upsertFailureForTask = async (req, res) => {
 	const { id: taskId } = req.params;
 	const failureData = req.body || {};
 	const actorId = req.user.id;
+	const effectiveRole = getEffectiveRole(req);
 
 	try {
 		const task = await prisma.task.findUnique({
@@ -547,6 +557,22 @@ export const upsertFailureForTask = async (req, res) => {
 
 		if (task.type !== "FAILURE") {
 			return res.status(400).json({ message: "Task is not a FAILURE type." });
+		}
+
+		const isFailureInTimeUpdateRequested = failureData.failureInTime !== undefined;
+		const hasFailureInTimeAlready = Boolean(task.failure?.failureInTime);
+		const isFailureTimeLockedRole = FAILURE_TIME_LOCKED_ROLES.has(effectiveRole);
+
+		if (isFailureInTimeUpdateRequested && hasFailureInTimeAlready) {
+			return res.status(400).json({
+				message: "failureInTime is captured at task creation and cannot be edited.",
+			});
+		}
+
+		if (isFailureInTimeUpdateRequested && isFailureTimeLockedRole) {
+			return res.status(403).json({
+				message: "Field engineers (JE/SSE) cannot edit failureInTime.",
+			});
 		}
 
 		const cleanedFailureData = {
