@@ -230,6 +230,9 @@ enum FailureType {
   DATA_LOGGER
   VHF
   GPS_CLOCK
+  RC
+  SCADA
+  LC_GATE
   BLOCK
   SECTION_CONTROL
   TPC_CONTROL
@@ -256,6 +259,8 @@ enum CauseOfFailure {
   WAGO_FAILURE
   LOW_INSULATION
   HIGH_LOSS
+  MUX_CHANNEL_FAULTY
+  E1_FAULTY
 }
 
 enum DailyReportSectionType {
