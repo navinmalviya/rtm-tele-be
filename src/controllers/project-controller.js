@@ -1,4 +1,9 @@
 import prisma from "../lib/prisma.js";
+import {
+	isPrivateWorkspaceOwnerRole,
+	PRIVATE_WORKSPACE_OWNER_ROLES,
+	isSuperAdmin,
+} from "../lib/access-scope.js";
 
 const updateProjectProgress = async (projectId) => {
 	const tasks = await prisma.task.findMany({
@@ -57,7 +62,25 @@ export const createProject = async (req, res) => {
  */
 export const getProjects = async (req, res) => {
 	try {
+		const where = {};
+		if (!isSuperAdmin(req)) {
+			where.owner = { divisionId: req.user.divisionId };
+			where.AND = [
+				{
+					OR: [
+						{
+							owner: {
+								role: { notIn: PRIVATE_WORKSPACE_OWNER_ROLES },
+							},
+						},
+						{ ownerId: req.user.id },
+					],
+				},
+			];
+		}
+
 		const projects = await prisma.project.findMany({
+			where,
 			include: {
 				_count: {
 					select: { tasks: true },
@@ -66,6 +89,8 @@ export const getProjects = async (req, res) => {
 					select: {
 						name: true,
 						username: true, // Changed from employeeId to username
+						role: true,
+						divisionId: true,
 					},
 				},
 			},
@@ -94,11 +119,23 @@ export const getProjectDetails = async (req, res) => {
 					},
 					orderBy: { createdAt: "desc" },
 				},
-				owner: { select: { name: true } },
+				owner: { select: { id: true, name: true, role: true, divisionId: true } },
 			},
 		});
 
 		if (!project) return res.status(404).json({ message: "Project not found" });
+
+		if (!isSuperAdmin(req) && project.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(project.owner?.role) &&
+			project.ownerId !== req.user.id
+		) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
 
 		res.status(200).json(project);
 	} catch (error) {
@@ -113,6 +150,26 @@ export const updateProject = async (req, res) => {
 	try {
 		const { id } = req.params;
 		const { status, name, description, endDate } = req.body;
+
+		const project = await prisma.project.findUnique({
+			where: { id },
+			include: { owner: { select: { id: true, divisionId: true, role: true } } },
+		});
+		if (!project) {
+			return res.status(404).json({ message: "Project not found" });
+		}
+
+		if (!isSuperAdmin(req) && project.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(project.owner?.role) &&
+			project.ownerId !== req.user.id
+		) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
 
 		const updatedProject = await prisma.project.update({
 			where: { id },
@@ -152,10 +209,22 @@ export const deleteProject = async (req, res) => {
 
 		const project = await prisma.project.findUnique({
 			where: { id },
-			select: { id: true, ownerId: true },
+			include: { owner: { select: { divisionId: true, role: true } } },
 		});
 		if (!project) {
 			return res.status(404).json({ message: "Project not found" });
+		}
+
+		if (!isSuperAdmin(req) && project.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(project.owner?.role) &&
+			project.ownerId !== req.user.id
+		) {
+			return res.status(403).json({ message: "Forbidden" });
 		}
 
 		const canDelete =

@@ -8,6 +8,13 @@ const FIELD_SCOPE_ROLES = new Set([
 	"TECHNICIAN",
 ]);
 
+export const PRIVATE_WORKSPACE_OWNER_ROLES = [
+	"SSE_TELE_INCHARGE",
+	"JE_SSE_TELE_SECTIONAL",
+];
+
+const PRIVATE_WORKSPACE_OWNER_ROLE_SET = new Set(PRIVATE_WORKSPACE_OWNER_ROLES);
+
 export const getEffectiveRole = (req) =>
 	req?.user?.originalRole || req?.user?.role || "";
 
@@ -15,6 +22,12 @@ export const isSuperAdmin = (req) => getEffectiveRole(req) === "SUPER_ADMIN";
 
 export const isFieldScopedRole = (req) =>
 	FIELD_SCOPE_ROLES.has(getEffectiveRole(req));
+
+export const isPrivateWorkspaceOwnerRole = (role) =>
+	PRIVATE_WORKSPACE_OWNER_ROLE_SET.has(role || "");
+
+export const isPrivateWorkspaceActor = (req) =>
+	isPrivateWorkspaceOwnerRole(getEffectiveRole(req));
 
 export const buildStationScopeClause = (req) => {
 	if (!req?.user?.id) return null;

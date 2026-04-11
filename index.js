@@ -1,10 +1,12 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import path from "node:path";
 import cron from "node-cron";
 import { runMaintenanceRemindersJob } from "./src/lib/maintenance-runner.js";
 import authRoutes from "./src/routes/auth-routes.js";
 import cableRoutes from "./src/routes/cable-routes.js";
+import chatRoutes from "./src/routes/chat-routes.js";
 import circuitRoutes from "./src/routes/circuit-routes.js";
 import dailyReportRoutes from "./src/routes/daily-report-routes.js";
 import equipmentRoutes from "./src/routes/equipment-routes.js";
@@ -28,7 +30,7 @@ import workExecutionRoutes from "./src/routes/work-execution-routes.js";
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: "15mb" }));
 
 app.use(
 	cors({
@@ -42,6 +44,7 @@ app.use(
 // });
 
 app.use("/auth", authRoutes);
+app.use("/chat", chatRoutes);
 app.use("/station", stationRoutes);
 app.use("/section", sectionRoutes);
 app.use("/location", locationRoutes);
@@ -63,6 +66,7 @@ app.use("/circuits", circuitRoutes);
 app.use("/station-cable", stationCableRoutes);
 app.use("/escalation-matrix", escalationMatrixRoutes);
 app.use("/work-execution", workExecutionRoutes);
+app.use("/uploads", express.static(path.resolve("uploads")));
 
 if (process.env.ENABLE_SCHEDULER !== "false") {
 	cron.schedule(

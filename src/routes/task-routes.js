@@ -2,6 +2,7 @@ import express from "express";
 import {
 	addTaskComment,
 	addSseInchargeRemark,
+	bulkTaskAction,
 	createTask,
 	deleteTask,
 	escalateOverdueFailures,
@@ -39,6 +40,13 @@ router.get(
 	verifyToken,
 	allowRoles(ROLE_ACCESS.TASK_READ),
 	getTasks,
+);
+
+router.post(
+	"/bulk-action",
+	verifyToken,
+	allowRoles(ROLE_ACCESS.TASK_WRITE),
+	bulkTaskAction,
 );
 
 /**

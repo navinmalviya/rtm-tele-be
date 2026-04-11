@@ -442,6 +442,7 @@ model User {
   testedSocketReports SocketTestingReport[] @relation("SocketTester")
   createdTasks        Task[]                @relation("CreatedBy")
   assignedTasks       Task[]                @relation("AssignedTo")
+  publishedTasks      Task[]                @relation("PublishedBy")
   projects            Project[] // Relation to projects they own
   comments            Comment[] // Relation to comments they author
   taskHistoryEntries  TaskHistory[]         @relation("TaskHistoryActor")
@@ -479,6 +480,10 @@ model User {
   workProgressEntries             WorkProgressEntry[]     @relation("WorkProgressReportedBy")
   workAllocationsGiven            WorkAllocationEntry[]   @relation("WorkAllocationAllocatedBy")
   workAllocationsAssigned         WorkAllocationEntry[]   @relation("WorkAllocationAllocatedTo")
+  chatConversationsAsParticipant1 ChatConversation[]      @relation("ChatParticipantOne")
+  chatConversationsAsParticipant2 ChatConversation[]      @relation("ChatParticipantTwo")
+  chatConversationsCreated        ChatConversation[]      @relation("ChatConversationCreatedBy")
+  chatMessagesSent                ChatMessage[]           @relation("ChatMessageSender")
   createdCableJoints              Joint[]                 @relation("CableJointCreatedBy")
   dailyReportInputsSubmitted      DailyReportInput[]      @relation("DailyReportInputSubmittedBy")
   dailyReportInputsForUser        DailyReportInput[]      @relation("DailyReportInputForUser")
@@ -502,6 +507,44 @@ model EscalationMatrix {
 
   @@unique([divisionId, level])
   @@index([divisionId, isActive])
+}
+
+model ChatConversation {
+  id             String        @id @default(uuid())
+  pairKey        String        @unique
+  createdById    String
+  createdBy      User          @relation("ChatConversationCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  participantAId String
+  participantA   User          @relation("ChatParticipantOne", fields: [participantAId], references: [id], onDelete: Cascade)
+  participantALastReadAt DateTime @default(now())
+  participantBId String
+  participantB   User          @relation("ChatParticipantTwo", fields: [participantBId], references: [id], onDelete: Cascade)
+  participantBLastReadAt DateTime @default(now())
+  lastMessageAt  DateTime      @default(now())
+  messages       ChatMessage[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([participantAId])
+  @@index([participantBId])
+  @@index([lastMessageAt])
+}
+
+model ChatMessage {
+  id             String           @id @default(uuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User             @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  text           String?
+  attachmentName String?
+  attachmentPath String?
+  attachmentType String?
+  attachmentSize Int?
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
 }
 
 model WorkExecution {
@@ -951,6 +994,10 @@ model Task {
   owner        User    @relation("CreatedBy", fields: [ownerId], references: [id])
   assignedToId String?
   assignedTo   User?   @relation("AssignedTo", fields: [assignedToId], references: [id])
+  isPublished  Boolean @default(false)
+  publishedAt  DateTime?
+  publishedById String?
+  publishedBy   User?   @relation("PublishedBy", fields: [publishedById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

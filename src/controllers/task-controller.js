@@ -5,6 +5,9 @@ import {
 	buildTaskVisibilityOr,
 	getEffectiveRole,
 	isFieldScopedRole,
+	isPrivateWorkspaceActor,
+	isPrivateWorkspaceOwnerRole,
+	PRIVATE_WORKSPACE_OWNER_ROLES,
 	isSuperAdmin,
 } from "../lib/access-scope.js";
 
@@ -111,7 +114,28 @@ export const createTask = async (req, res) => {
 		}
 	}
 
+	if (isPrivateWorkspaceActor(req) && assignedToId && assignedToId !== ownerId) {
+		return res
+			.status(400)
+			.json({ message: "Private tasks can only be assigned to the task creator." });
+	}
+
 	try {
+		if (isPrivateWorkspaceActor(req) && projectId) {
+			const project = await prisma.project.findUnique({
+				where: { id: projectId },
+				select: { id: true, ownerId: true },
+			});
+			if (!project) {
+				return res.status(400).json({ message: "Invalid project selected." });
+			}
+			if (project.ownerId !== ownerId) {
+				return res.status(403).json({
+					message: "Private tasks can only be linked to your own projects.",
+				});
+			}
+		}
+
 		const result = await prisma.$transaction(async (tx) => {
 			// 1. Create the Base Task
 			const task = await tx.task.create({
@@ -237,6 +261,14 @@ export const updateTask = async (req, res) => {
 			return res.status(403).json({ message: "Forbidden" });
 		}
 
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(task.owner?.role) &&
+			task.ownerId !== actorId
+		) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
 		const canEdit =
 			req.user.role === "SUPER_ADMIN" ||
 			req.user.role === "ADMIN" ||
@@ -345,11 +377,30 @@ export const updateTaskStatus = async (req, res) => {
 	try {
 		const currentTask = await prisma.task.findUnique({
 			where: { id },
-			select: { assignedToId: true, type: true, projectId: true, status: true },
+			select: {
+				assignedToId: true,
+				ownerId: true,
+				type: true,
+				projectId: true,
+				status: true,
+				owner: { select: { divisionId: true, role: true } },
+			},
 		});
 
 		if (!currentTask) {
 			return res.status(404).json({ message: "Task not found" });
+		}
+
+		if (!isSuperAdmin(req) && currentTask.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(currentTask.owner?.role) &&
+			currentTask.ownerId !== userId
+		) {
+			return res.status(403).json({ message: "Forbidden" });
 		}
 
 		if (status === "CLOSED") {
@@ -418,6 +469,17 @@ export const getTasks = async (req, res) => {
 						divisionId: req.user.divisionId,
 					},
 				},
+				{
+					OR: [
+						{
+							owner: {
+								role: { notIn: PRIVATE_WORKSPACE_OWNER_ROLES },
+							},
+						},
+						{ ownerId: req.user.id },
+						{ isPublished: true },
+					],
+				},
 			];
 		}
 
@@ -434,7 +496,7 @@ export const getTasks = async (req, res) => {
 		const tasks = await prisma.task.findMany({
 			where,
 			include: {
-				owner: { select: { name: true, username: true } },
+				owner: { select: { id: true, name: true, username: true, role: true } },
 				assignedTo: { select: { name: true, username: true } },
 				failure: {
 					include: { location: true, cableCut: true },
@@ -469,7 +531,9 @@ export const getTaskById = async (req, res) => {
 		const task = await prisma.task.findUnique({
 			where: { id },
 			include: {
-				owner: { select: { id: true, name: true, username: true, divisionId: true } },
+				owner: {
+					select: { id: true, name: true, username: true, divisionId: true, role: true },
+				},
 				assignedTo: { select: { name: true, username: true } },
 				failure: {
 					include: { location: true, cableCut: true, station: true },
@@ -493,6 +557,15 @@ export const getTaskById = async (req, res) => {
 		}
 
 		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(task.owner?.role) &&
+			task.ownerId !== req.user.id &&
+			!task.isPublished
+		) {
 			return res.status(403).json({ message: "Forbidden" });
 		}
 
@@ -548,7 +621,10 @@ export const upsertFailureForTask = async (req, res) => {
 	try {
 		const task = await prisma.task.findUnique({
 			where: { id: taskId },
-			include: { failure: true },
+			include: {
+				failure: true,
+				owner: { select: { divisionId: true, role: true } },
+			},
 		});
 
 		if (!task) {
@@ -557,6 +633,18 @@ export const upsertFailureForTask = async (req, res) => {
 
 		if (task.type !== "FAILURE") {
 			return res.status(400).json({ message: "Task is not a FAILURE type." });
+		}
+
+		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(task.owner?.role) &&
+			task.ownerId !== req.user.id
+		) {
+			return res.status(403).json({ message: "Forbidden" });
 		}
 
 		const isFailureInTimeUpdateRequested = failureData.failureInTime !== undefined;
@@ -675,6 +763,24 @@ export const addTaskComment = async (req, res) => {
 	const authorId = req.user.id;
 
 	try {
+		const task = await prisma.task.findUnique({
+			where: { id: taskId },
+			include: { owner: { select: { divisionId: true, role: true } } },
+		});
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(task.owner?.role) &&
+			task.ownerId !== req.user.id
+		) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
 		const comment = await prisma.$transaction(async (tx) => {
 			const createdComment = await tx.comment.create({
 				data: {
@@ -717,6 +823,24 @@ export const addSseInchargeRemark = async (req, res) => {
 	}
 
 	try {
+		const task = await prisma.task.findUnique({
+			where: { id: taskId },
+			include: { owner: { select: { divisionId: true, role: true } } },
+		});
+		if (!task) {
+			return res.status(404).json({ message: "Task not found" });
+		}
+		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(task.owner?.role) &&
+			task.ownerId !== req.user.id
+		) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
 		const comment = await prisma.$transaction(async (tx) => {
 			const createdComment = await tx.comment.create({
 				data: {
@@ -751,7 +875,7 @@ export const deleteTask = async (req, res) => {
 		const task = await prisma.task.findUnique({
 			where: { id },
 			include: {
-				owner: { select: { divisionId: true } },
+				owner: { select: { divisionId: true, role: true } },
 			},
 		});
 
@@ -760,6 +884,14 @@ export const deleteTask = async (req, res) => {
 		}
 
 		if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
+		if (
+			!isSuperAdmin(req) &&
+			isPrivateWorkspaceOwnerRole(task.owner?.role) &&
+			task.ownerId !== req.user.id
+		) {
 			return res.status(403).json({ message: "Forbidden" });
 		}
 
@@ -784,6 +916,111 @@ export const deleteTask = async (req, res) => {
 		}
 
 		return res.status(200).json({ message: "Task deleted successfully" });
+	} catch (error) {
+		return res.status(500).json({ error: error.message });
+	}
+};
+
+/**
+ * BULK TASK ACTIONS (owner-driven selection flows)
+ * actions: PUBLISH | DELETE
+ */
+export const bulkTaskAction = async (req, res) => {
+	const { taskIds = [], action } = req.body || {};
+	const actorId = req.user.id;
+
+	if (!Array.isArray(taskIds) || taskIds.length === 0) {
+		return res.status(400).json({ message: "taskIds must be a non-empty array." });
+	}
+	if (!["PUBLISH", "DELETE"].includes(action)) {
+		return res.status(400).json({ message: "Invalid action." });
+	}
+
+	try {
+		const tasks = await prisma.task.findMany({
+			where: { id: { in: taskIds } },
+			include: {
+				owner: { select: { id: true, divisionId: true, role: true } },
+			},
+		});
+
+		if (tasks.length !== taskIds.length) {
+			return res.status(404).json({ message: "Some tasks were not found." });
+		}
+
+		for (const task of tasks) {
+			if (!isSuperAdmin(req) && task.owner?.divisionId !== req.user.divisionId) {
+				return res.status(403).json({ message: "Forbidden" });
+			}
+
+			// Bulk selection actions are owner-only for safety.
+			if (task.ownerId !== actorId) {
+				return res.status(403).json({ message: "Only task owner can perform bulk actions." });
+			}
+		}
+
+		if (action === "PUBLISH") {
+			const now = new Date();
+			const publishableTasks = tasks.filter(
+				(task) => isPrivateWorkspaceOwnerRole(task.owner?.role) && !task.isPublished,
+			);
+
+			if (publishableTasks.length === 0) {
+				return res.status(200).json({
+					message: "No eligible private tasks found to publish.",
+					updatedCount: 0,
+				});
+			}
+
+			const publishableIds = publishableTasks.map((task) => task.id);
+
+			await prisma.$transaction(async (tx) => {
+				await tx.task.updateMany({
+					where: { id: { in: publishableIds } },
+					data: {
+						isPublished: true,
+						publishedAt: now,
+						publishedById: actorId,
+					},
+				});
+
+				await tx.taskHistory.createMany({
+					data: publishableIds.map((taskId) => ({
+						taskId,
+						actorId,
+						action: "TASK_PUBLISHED",
+						details: "Task published to divisional workspace.",
+					})),
+				});
+			});
+
+			return res.status(200).json({
+				message: `${publishableIds.length} task(s) published successfully.`,
+				updatedCount: publishableIds.length,
+			});
+		}
+
+		// DELETE
+		const deletingTaskIds = tasks.map((task) => task.id);
+		const projectIds = Array.from(
+			new Set(tasks.map((task) => task.projectId).filter(Boolean)),
+		);
+
+		await prisma.$transaction(async (tx) => {
+			await tx.failure.deleteMany({ where: { taskId: { in: deletingTaskIds } } });
+			await tx.maintenance.deleteMany({ where: { taskId: { in: deletingTaskIds } } });
+			await tx.tRCRequest.deleteMany({ where: { taskId: { in: deletingTaskIds } } });
+			await tx.task.deleteMany({ where: { id: { in: deletingTaskIds } } });
+		});
+
+		for (const projectId of projectIds) {
+			await syncProjectProgress(projectId);
+		}
+
+		return res.status(200).json({
+			message: `${deletingTaskIds.length} task(s) deleted successfully.`,
+			deletedCount: deletingTaskIds.length,
+		});
 	} catch (error) {
 		return res.status(500).json({ error: error.message });
 	}

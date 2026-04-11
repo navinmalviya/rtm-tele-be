@@ -3,6 +3,7 @@ import {
 	buildSubsectionVisibilityWhere,
 	buildTaskVisibilityOr,
 	isFieldScopedRole,
+	PRIVATE_WORKSPACE_OWNER_ROLES,
 	isSuperAdmin,
 } from "../lib/access-scope.js";
 import prisma from "../lib/prisma.js";
@@ -353,7 +354,20 @@ const fetchFailureTasks = async (req, range) => {
 	};
 
 	if (!isSuperAdmin(req)) {
-		where.AND = [{ owner: { divisionId: req.user.divisionId } }];
+		where.AND = [
+			{ owner: { divisionId: req.user.divisionId } },
+			{
+				OR: [
+					{
+						owner: {
+							role: { notIn: PRIVATE_WORKSPACE_OWNER_ROLES },
+						},
+					},
+					{ ownerId: req.user.id },
+					{ isPublished: true },
+				],
+			},
+		];
 	}
 
 	if (isFieldScopedRole(req)) {
