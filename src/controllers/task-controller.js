@@ -103,6 +103,9 @@ export const createTask = async (req, res) => {
 	} = req.body;
 
 	const ownerId = req.user.id;
+	const normalizedAssignedToId = isPrivateWorkspaceActor(req)
+		? ownerId
+		: assignedToId || null;
 
 	if (type === "FAILURE") {
 		if (!failureData?.failureInTime) {
@@ -147,7 +150,7 @@ export const createTask = async (req, res) => {
 					weight: weight ? parseFloat(weight) : null,
 					projectId,
 					ownerId,
-					assignedToId,
+					assignedToId: normalizedAssignedToId,
 				},
 			});
 
@@ -158,13 +161,13 @@ export const createTask = async (req, res) => {
 				details: `Task created with priority ${priority || "MEDIUM"}`,
 			});
 
-			if (assignedToId) {
+			if (normalizedAssignedToId) {
 				await appendTaskHistory(tx, {
 					taskId: task.id,
 					actorId: ownerId,
 					action: "ASSIGNEE_UPDATED",
 					fromValue: "UNASSIGNED",
-					toValue: assignedToId,
+					toValue: normalizedAssignedToId,
 					details: "Task assigned during creation",
 				});
 			}
@@ -290,11 +293,7 @@ export const updateTask = async (req, res) => {
 		}
 
 		if (description !== undefined) {
-			const cleanDescription = String(description || "").trim();
-			if (!cleanDescription) {
-				return res.status(400).json({ message: "Description is required." });
-			}
-			updatePayload.description = cleanDescription;
+			updatePayload.description = String(description || "").trim() || null;
 		}
 
 		if (priority !== undefined) {

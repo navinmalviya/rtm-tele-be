@@ -20,7 +20,7 @@ const router = express.Router();
 router.get(
 	"/all",
 	verifyToken,
-	allowRoles(ROLE_ACCESS.USER_MANAGE),
+	allowRoles(ROLE_ACCESS.TASK_WRITE),
 	getAllUsers,
 );
 

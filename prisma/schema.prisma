@@ -169,6 +169,7 @@ enum AssetStatus {
 }
 
 enum TaskType {
+  TASK
   FAILURE
   TRC
   MAINTENANCE
